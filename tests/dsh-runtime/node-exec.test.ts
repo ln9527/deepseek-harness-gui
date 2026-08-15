@@ -28,13 +28,17 @@ describe('findSystemNode(spec 注入,平台无关)', () => {
   })
 
   it('win32:分号分隔 + node.exe + Program Files 兜底', () => {
+    // join 的分隔符随宿主平台,统一归一化后比较
+    const norm = (p: string): string => p.replace(/\\/g, '/')
     expect(findSystemNode('C:\\x;D:\\y', () => false, winSpec)).toBeNull()
     expect(
-      findSystemNode('C:\\x;D:\\y', (p) => p === 'D:\\y\\node.exe', winSpec)
-    ).toBe('D:\\y\\node.exe')
+      norm(findSystemNode('C:\\x;D:\\y', (p) => norm(p) === 'D:/y/node.exe', winSpec) ?? '')
+    ).toBe('D:/y/node.exe')
     expect(
-      findSystemNode('', (p) => p === 'C:\\Program Files\\nodejs\\node.exe', winSpec)
-    ).toBe('C:\\Program Files\\nodejs\\node.exe')
+      norm(
+        findSystemNode('', (p) => norm(p) === 'C:/Program Files/nodejs/node.exe', winSpec) ?? ''
+      )
+    ).toBe('C:/Program Files/nodejs/node.exe')
   })
 })
 
