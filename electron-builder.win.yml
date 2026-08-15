@@ -1,0 +1,26 @@
+appId: com.ningli.dshgui
+productName: DSH GUI
+directories:
+  buildResources: build
+  output: dist-win
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/tray
+    to: resources/tray
+  - from: resources/dsh-runtime-win
+    to: resources/dsh-runtime-win
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: DSH GUI
+  artifactName: DSH-GUI-Setup-${version}-x64.exe

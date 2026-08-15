@@ -1,0 +1,42 @@
+{
+  "name": "dsh-gui",
+  "version": "0.1.0",
+  "description": "macOS desktop shell for DeepSeek Harness (DSH)",
+  "license": "MIT",
+  "private": true,
+  "main": "out/main/index.js",
+  "author": "ningli",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist": "node scripts/fetch-builtin-runtime.mjs && electron-vite build && electron-builder --mac --arm64",
+    "dist:win": "node scripts/fetch-builtin-runtime.mjs --platform win32 && electron-vite build && electron-builder --win --x64 --config electron-builder.win.yml",
+    "fetch:runtime": "node scripts/fetch-builtin-runtime.mjs",
+    "icons": "node scripts/gen-icons.mjs",
+    "start:packaged": "electron-vite preview"
+  },
+  "dependencies": {
+    "electron-log": "5.4.4",
+    "ws": "8.21.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.1",
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "4.1.10"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}

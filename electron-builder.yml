@@ -1,0 +1,24 @@
+appId: com.ningli.dshgui
+productName: DSH GUI
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/tray
+    to: resources/tray
+  - from: resources/dsh-runtime
+    to: resources/dsh-runtime
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  identity: null
+dmg:
+  title: DSH GUI
+  artifactName: DSH-GUI-${version}-arm64.dmg
