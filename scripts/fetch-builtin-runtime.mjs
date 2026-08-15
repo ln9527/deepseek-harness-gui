@@ -11,6 +11,28 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+/**
+ * 跨平台解析 npm:Windows 上 npm 是 npm.cmd 不能被 spawnSync 直接拉起,
+ * 统一改用 node 直跑 npm-cli.js(按 node 发行版目录布局探测)。
+ */
+function resolveNpmInvocation() {
+  const candidates = [
+    join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    process.platform === 'darwin' ? '/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js' : null
+  ].filter((c) => c !== null && existsSync(c))
+  const cliJs = candidates[0]
+  if (cliJs) {
+    return { exec: process.execPath, prefix: [cliJs] }
+  }
+  // 兜底:unix 下 npm 可直接执行
+  return { exec: 'npm', prefix: [] }
+}
+
+function runNpm(args) {
+  const { exec, prefix } = resolveNpmInvocation()
+  execFileSync(exec, [...prefix, ...args], { stdio: 'inherit' })
+}
+
 const PINNED_DSH_VERSION = '0.1.0-rc.6'
 const NPM_PACKAGE = '@deepseek-ai/dsh'
 
@@ -73,22 +95,18 @@ function assertNpmLayout(dir) {
 mkdirSync(versionsRoot, { recursive: true })
 const tmpDir = join(versionsRoot, `tmp-${PINNED_DSH_VERSION}-${Date.now()}`)
 console.log(`npm install ${NPM_PACKAGE}@${PINNED_DSH_VERSION} → ${tmpDir}${isWin ? ' (win32-x64)' : ''}`)
-execFileSync(
-  'npm',
-  [
-    'install',
-    '--prefix',
-    tmpDir,
-    '--no-fund',
-    '--no-audit',
-    '--omit=dev',
-    '--loglevel',
-    'notice',
-    ...npmPlatformFlags,
-    `${NPM_PACKAGE}@${PINNED_DSH_VERSION}`
-  ],
-  { stdio: 'inherit' }
-)
+runNpm([
+  'install',
+  '--prefix',
+  tmpDir,
+  '--no-fund',
+  '--no-audit',
+  '--omit=dev',
+  '--loglevel',
+  'notice',
+  ...npmPlatformFlags,
+  `${NPM_PACKAGE}@${PINNED_DSH_VERSION}`
+])
 assertNpmLayout(tmpDir)
 const [major, minor] = process.versions.node.split('.')
 writeFileSync(
