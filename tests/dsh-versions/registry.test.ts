@@ -199,7 +199,8 @@ describe('manifest 内容', () => {
     await installVersion({ npm: fakeNpm, versionsRoot: root, version: '0.1.0', nodeMajorMinor: '22.22', onLine: () => {} })
     const manifest = JSON.parse(readFileSync(join(root, '0.1.0', '.dsh-manifest.json'), 'utf8')) as Record<string, unknown>
     expect(manifest['version']).toBe('0.1.0')
-    expect(manifest['entryPath']).toBe('node_modules/@deepseek-ai/dsh/lib/bin.js')
+    // join 的分隔符随平台,归一化后断言
+    expect(String(manifest['entryPath']).replace(/\\/g, '/')).toBe('node_modules/@deepseek-ai/dsh/lib/bin.js')
     expect(typeof manifest['installedAt']).toBe('number')
   })
 })

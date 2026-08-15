@@ -36,6 +36,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Ensure Electron binary downloaded (Windows postinstall flake)
+        run: node node_modules/electron/install.js
       - run: pnpm typecheck
       - name: Materialize win32 runtime
         run: node scripts/fetch-builtin-runtime.mjs --platform win32
