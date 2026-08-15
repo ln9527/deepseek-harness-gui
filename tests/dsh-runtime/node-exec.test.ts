@@ -1,5 +1,11 @@
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { findSystemNode, resolveNodeExec, satisfiesNodeFloor } from '../../src/main/dsh-runtime/node-exec'
+import {
+  defaultNodeLookupSpec,
+  findSystemNode,
+  resolveNodeExec,
+  satisfiesNodeFloor
+} from '../../src/main/dsh-runtime/node-exec'
 
 describe('satisfiesNodeFloor', () => {
   it('地板版本判定(node:sqlite >= 22.13)', () => {
@@ -11,21 +17,35 @@ describe('satisfiesNodeFloor', () => {
   })
 })
 
-describe('findSystemNode', () => {
-  it('按 PATH 顺序探测并去重', () => {
+describe('findSystemNode(spec 注入,平台无关)', () => {
+  const darwinSpec = defaultNodeLookupSpec('darwin')
+  const winSpec = defaultNodeLookupSpec('win32')
+
+  it('darwin:按 PATH 顺序探测并去重', () => {
     const exists = (p: string) => p === '/opt/homebrew/bin/node' || p === '/usr/local/bin/node'
-    expect(findSystemNode('/a:/b', exists)).toBe('/opt/homebrew/bin/node')
-    expect(findSystemNode('/x:/y', () => false)).toBeNull()
+    expect(findSystemNode('/a:/b', exists, darwinSpec)).toBe('/opt/homebrew/bin/node')
+    expect(findSystemNode('/x:/y', () => false, darwinSpec)).toBeNull()
+  })
+
+  it('win32:分号分隔 + node.exe + Program Files 兜底', () => {
+    expect(findSystemNode('C:\\x;D:\\y', () => false, winSpec)).toBeNull()
+    expect(
+      findSystemNode('C:\\x;D:\\y', (p) => p === 'D:\\y\\node.exe', winSpec)
+    ).toBe('D:\\y\\node.exe')
+    expect(
+      findSystemNode('', (p) => p === 'C:\\Program Files\\nodejs\\node.exe', winSpec)
+    ).toBe('C:\\Program Files\\nodejs\\node.exe')
   })
 })
 
 describe('resolveNodeExec', () => {
-  it('系统 node 满足地板时优先使用(ABI 匹配,无附加 flag)', () => {
+  it('系统 node 满足地板时优先使用(ABI 匹配,无附加 flag)——用当前运行中的真实 node 定位,任何机器成立', () => {
+    const nodeDir = dirname(process.execPath)
     const r = resolveNodeExec({
-      electronExecPath: '/Applications/DSH GUI.app/Contents/MacOS/DSH GUI',
+      electronExecPath: '/fake/electron',
       electronNodeVersion: '24.18.0',
-      envPath: '',
-      exists: (p) => p === '/opt/homebrew/bin/node'
+      envPath: nodeDir,
+      exists: (p) => p === join(nodeDir, 'node') || p === join(nodeDir, 'node.exe')
     })
     expect(r.source).toBe('system')
     expect(r.useRunAsNode).toBe(false)
