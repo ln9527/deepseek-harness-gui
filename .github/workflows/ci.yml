@@ -47,7 +47,7 @@ jobs:
           # 内置 DSH 树,断言 banner + host.describe + 退出
           RUN_BUILTIN_SMOKE: '1'
       - name: Build NSIS installer
-        run: pnpm exec electron-vite build && pnpm exec electron-builder --win --x64 --config electron-builder.win.yml
+        run: pnpm exec electron-vite build && pnpm exec electron-builder --win --x64 --config electron-builder.win.yml --publish never
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
