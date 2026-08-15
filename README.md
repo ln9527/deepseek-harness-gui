@@ -30,7 +30,10 @@ Grab the latest from [**Releases**](../../releases):
 ### macOS
 
 1. Open the `.dmg` and **drag DSH GUI into /Applications** (required — otherwise it won't appear in Launchpad).
-2. First launch, unsigned app: **right-click → Open → Open** (macOS 14), or on macOS 15 double-click once, then *System Settings → Privacy & Security → Open Anyway*. Or in Terminal: `xattr -dr com.apple.quarantine /Applications/DSH\ GUI.app`.
+2. First launch, unsigned app (one-time). Any of:
+   - **Recommended (macOS 13/14/15):** double-click DSH GUI once so macOS blocks it, then open **System Settings → Privacy & Security**, scroll down to the *"DSH GUI was blocked"* notice → click **Open Anyway** → enter your password.
+   - Right-click DSH GUI → **Open → Open**.
+   - Terminal: `xattr -dr com.apple.quarantine /Applications/DSH\ GUI.app`.
 3. The app auto-starts the bundled DSH and offers to set your **DeepSeek API Key** — the only required step.
 4. If Launchpad doesn't refresh: `killall Dock`.
 
