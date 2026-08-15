@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    name: macOS (unit + integration)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  windows:
+    name: Windows x64 (unit + builtin-runtime smoke + NSIS)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Materialize win32 runtime
+        run: node scripts/fetch-builtin-runtime.mjs --platform win32
+      - run: pnpm test
+        env:
+          # 在真 Windows 上跑内置运行时冒烟:Electron-as-Node 拉起 win32-x64
+          # 内置 DSH 树,断言 banner + host.describe + 退出
+          RUN_BUILTIN_SMOKE: '1'
+      - name: Build NSIS installer
+        run: pnpm exec electron-vite build && pnpm exec electron-builder --win --x64 --config electron-builder.win.yml
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH-GUI-Setup-win-x64
+          path: dist-win/*.exe
+          retention-days: 14

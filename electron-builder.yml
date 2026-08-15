@@ -18,7 +18,11 @@ mac:
     - target: dmg
       arch:
         - arm64
-  identity: null
+  # ad-hoc 重签(而非跳过):让下载副本过 Gatekeeper 校验时
+  # 显示"无法验证开发者"(右键可打开)而不是"文件已损坏"
+  identity: "-"
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
 dmg:
   title: DSH GUI
   artifactName: DSH-GUI-${version}-arm64.dmg
