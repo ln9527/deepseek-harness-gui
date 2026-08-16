@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-DSH GUI — an Electron (100% TypeScript) desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH), published at https://github.com/ln9527/deepseek-harness-gui. The architectural iron rule: **the shell is a process manager + browser container**. It never forks DSH, never copies its frontend, never parses DSH internal storage — this is what keeps it alive across DSH's rapid developer-preview releases (documented breaking changes, no protocol versioning).
+DSH GUI — an Electron (100% TypeScript) desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) on macOS (arm64) and Windows (x64), published at https://github.com/ln9527/deepseek-harness-gui (installers on the Releases page, both self-contained — a full DSH runtime tree ships inside the app, zero Node.js on target machines). The architectural iron rule: **the shell is a process manager + browser container**. It never forks DSH, never copies its frontend, never parses DSH internal storage — this is what keeps it alive across DSH's rapid developer-preview releases (documented breaking changes, no protocol versioning).
 
 ## Commands
 
@@ -43,6 +43,16 @@ Setup quirks: pnpm 10 blocks postinstall scripts — if `node_modules/electron/d
 - External SIGTERM/SIGINT/SIGHUP do **not** trigger Electron's `before-quit` — `main.ts` routes them into the same graceful-quit sequence or the DSH child leaks.
 - `ShellSettings.flags` must stay `shellFlagsSchema.default(...)` — a missing-key zod default, so old `settings.json` files pass validation instead of being quarantined.
 - Global `uncaughtException`/`unhandledRejection` handlers in `main.ts` log-and-keep-alive (also suppresses the Electron crash dialog); a dead shell would orphan the DSH child.
+- mac builds must stay `identity: "-"` — `identity: null` leaves a stale Electron seal and downloaded copies report “文件已损坏” (see Distribution section).
+- Windows CI path assertions must normalize separators (`\` → `/`) — manifest/lookup tests compare `join()` output that differs per host OS.
+
+## Distribution, signing & CI
+
+**mac signing** (`electron-builder.yml`): `identity: "-"` (explicit ad-hoc) + `hardenedRuntime` + `build/entitlements.mac.plist` (allow-jit + disable-library-validation). Do **not** set `identity: null` — electron-builder then skips signing entirely and leaves Electron's stale ad-hoc seal on the app, so copies downloaded from GitHub fail Gatekeeper with “文件已损坏” (only `xattr -dr com.apple.quarantine` recovers). With our ad-hoc seal the user instead sees the benign “无法验证开发者” prompt, cleared via System Settings → 隐私与安全性 → 仍要打开 (documented in README.md + README-macOS.txt as method A). Verify a built dmg with `codesign --verify --deep --strict` after mounting.
+
+**CI** (`.github/workflows/ci.yml`): macos-14 job = typecheck + test; windows-latest job additionally materializes the win32 runtime (`fetch:runtime --platform win32`), runs the builtin-runtime smoke test behind `RUN_BUILTIN_SMOKE=1` (real Electron-as-Node spawning the bundled win32-x64 DSH tree on real Windows), and builds the NSIS installer with `--publish never` (without it, electron-builder tries an implicit publish and fails on missing `GH_TOKEN`). The Windows job also runs `node node_modules/electron/install.js` explicitly — postinstall electron download flakes (os error 80) under pnpm on CI.
+
+**Releases** (v0.1.0 published): assets = `DSH-GUI-<v>-arm64.dmg`, `DSH-GUI-Setup-<v>-x64.exe`, plus recipient-facing Chinese install guides `README-macOS.txt` / `README-Windows.txt`. The guides' source of truth is the repo root; after editing, copy into `dist/` and `gh release upload <tag> --clobber` (keep root and dist copies identical). Uploads use `gh release upload`, repo push uses main directly.
 
 ## Conventions
 

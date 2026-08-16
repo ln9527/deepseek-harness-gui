@@ -24,7 +24,7 @@ Grab the latest from [**Releases**](../../releases):
 
 | File | Platform |
 |---|---|
-| `DSH-GUI-<version>-arm64.dmg` (~177 MB) | macOS, Apple Silicon (M1/M2/M3/M4) |
+| `DSH-GUI-<version>-arm64.dmg` (~179 MB) | macOS, Apple Silicon (M1/M2/M3/M4) |
 | `DSH-GUI-Setup-<version>-x64.exe` (~212 MB) | Windows 10/11 x64 |
 
 ### macOS
@@ -58,7 +58,7 @@ pnpm test               # vitest (incl. real-subprocess supervisor integration t
 pnpm typecheck
 pnpm icons              # regenerate app/tray icons (pure Node, zero image deps)
 pnpm fetch:runtime      # materialize the bundled DSH tree into resources/ (skips if present)
-pnpm dist               # macOS arm64 .dmg (self-contained, ~177 MB)
+pnpm dist               # macOS arm64 .dmg (self-contained, ~179 MB)
 pnpm dist:win           # Windows x64 NSIS installer (cross-builds from macOS, ~212 MB)
 ```
 
