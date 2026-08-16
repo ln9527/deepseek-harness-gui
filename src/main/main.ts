@@ -73,7 +73,7 @@ function bootstrap(): void {
       })
     })
 
-    // ---- Node 运行时(DSH 需要 >= 22.13,node:sqlite) ----
+    // ---- Node 运行时(DSH engines ^22.19||>=24;不满足的系统 node 自动回落内嵌) ----
     let nodeExec: NodeExecResolution
     try {
       nodeExec = resolveNodeExec({
@@ -85,7 +85,7 @@ function bootstrap(): void {
     } catch (error) {
       dialog.showErrorBox(
         'DSH GUI 无法启动',
-        `未找到满足 DSH 要求的 Node 运行时(>= 22.13):\n${error instanceof Error ? error.message : String(error)}`
+        `未找到满足 DSH 要求的 Node 运行时(engines ^22.19||>=24):\n${error instanceof Error ? error.message : String(error)}\n\n建议安装 Node.js 22 LTS 最新版(nodejs.org)后重试。`
       )
       app.quit()
       return

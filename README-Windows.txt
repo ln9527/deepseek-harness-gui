@@ -11,7 +11,7 @@ DeepSeek Harness(DSH)的 Windows 桌面应用。
 - Windows 10/11(64 位)
 
 【安装步骤】
-1. 双击 DSH-GUI-Setup-0.1.0-x64.exe
+1. 双击 DSH-GUI-Setup-0.1.1-x64.exe
 2. 若出现蓝色 SmartScreen 提示"已保护你的电脑":
    点击「更多信息」→「仍要运行」
    (这是因为应用未购买微软签名证书,属正常现象)
@@ -23,6 +23,10 @@ DeepSeek Harness(DSH)的 Windows 桌面应用。
 6. 开始使用(窗口里就是 DSH 完整界面,可建会话/跑任务)
 
 【常见问题】
+- 启动报错含 node:zlib / createZstdDecompress(v0.1.0 已知问题):
+  你电脑上装有较旧的 Node.js(22.14 及以下)被旧版误用。
+  请下载 v0.1.1 或更新版本——会自动改用内置运行时,无需卸载 Node;
+  或把 Node.js 升级到 22 最新版(nodejs.org)
 - 双击没反应/被杀毒软件拦截:允许运行即可(未签名应用)
 - 任务栏托盘有 DSH 图标:关闭窗口=后台继续跑任务,
   彻底退出请用托盘右键菜单 →「退出 DSH GUI」

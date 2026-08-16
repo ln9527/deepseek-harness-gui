@@ -8,10 +8,15 @@ import {
 } from '../../src/main/dsh-runtime/node-exec'
 
 describe('satisfiesNodeFloor', () => {
-  it('地板版本判定(node:sqlite >= 22.13)', () => {
-    expect(satisfiesNodeFloor('v22.13.0')).toBe(true)
+  it('地板版本判定(DSH engines ^22.19||>=24;zstd API 22.15 才有)', () => {
+    expect(satisfiesNodeFloor('v22.19.0')).toBe(true)
     expect(satisfiesNodeFloor('v22.12.9')).toBe(false)
-    expect(satisfiesNodeFloor('22.19.0')).toBe(true)
+    // 回归:真机 Windows 系统装了 22.14,旧地板(22.13)放过它,
+    // DSH session-persistence-jsonl import createZstdDecompress → 启动即崩
+    expect(satisfiesNodeFloor('v22.14.0')).toBe(false)
+    expect(satisfiesNodeFloor('v22.15.0')).toBe(false) // 有 zstd 但低于 engines 线
+    // 23.x 不在 engines 内(非 LTS;zstd 23.8 才有)
+    expect(satisfiesNodeFloor('v23.9.0')).toBe(false)
     expect(satisfiesNodeFloor('v24.0.0')).toBe(true)
     expect(satisfiesNodeFloor('garbage')).toBe(false)
   })
@@ -68,6 +73,32 @@ describe('resolveNodeExec', () => {
     expect(r.nodeFlags).toEqual(['--expose-internals'])
   })
 
+  it('回归(真机 win 报案):系统 node 22.14 缺 zstd → 必须拒绝并回落 Electron 内嵌', () => {
+    const r = resolveNodeExec({
+      electronExecPath: '/fake/electron',
+      electronNodeVersion: '24.18.0',
+      envPath: '/x',
+      exists: () => true,
+      nodeVersion: () => 'v22.14.0'
+    })
+    expect(r.source).toBe('electron')
+    expect(r.useRunAsNode).toBe(true)
+    expect(r.nodeFlags).toEqual(['--expose-internals'])
+    expect(r.reason).toContain('22.14')
+  })
+
+  it('系统 node 恰在 engines 下限(22.19)时仍优先系统 node', () => {
+    const r = resolveNodeExec({
+      electronExecPath: '/fake/electron',
+      electronNodeVersion: '24.18.0',
+      envPath: '/x',
+      exists: () => true,
+      nodeVersion: () => 'v22.19.1'
+    })
+    expect(r.source).toBe('system')
+    expect(r.nodeFlags).toEqual([])
+  })
+
   it('系统 node 过旧且内嵌过旧时抛错', () => {
     expect(() =>
       resolveNodeExec({
@@ -76,6 +107,6 @@ describe('resolveNodeExec', () => {
         envPath: '',
         exists: () => false
       })
-    ).toThrow(/Node/)
+    ).toThrow(/运行时/)
   })
 })

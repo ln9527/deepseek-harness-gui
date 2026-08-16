@@ -49,7 +49,7 @@ Install → open → the window shows the DSH Web UI → the app prompts for you
 
 ## Build from source
 
-Requirements: Node ≥ 22.13, pnpm 10.
+Requirements: Node ≥ 22.19 (DSH engines `^22.19 || >=24`), pnpm 10.
 
 ```bash
 pnpm install            # if the Electron binary didn't download: node node_modules/electron/install.js

@@ -13,7 +13,7 @@ DeepSeek Harness(DSH)的 Mac 桌面应用。
   (Intel 芯片的 Mac 不适用此包)
 
 【安装步骤】
-1. 双击 DSH-GUI-0.1.0-arm64.dmg
+1. 双击 DSH-GUI-0.1.1-arm64.dmg
 2. 把 DSH GUI 图标拖入旁边的 Applications 文件夹
    (必须拖入 /Applications,否则不会出现在启动台)
 3. 打开启动台(Launchpad),点击 DSH GUI
@@ -29,6 +29,9 @@ DeepSeek Harness(DSH)的 Mac 桌面应用。
 7. 开始使用(窗口里就是 DSH 完整界面,可建会话/跑任务)
 
 【常见问题】
+- 启动报错含 node:zlib / createZstdDecompress(v0.1.0 已知问题):
+  电脑上装有较旧的 Node.js(22.14 及以下)被旧版误用。
+  请下载 v0.1.1 或更新版本即可,无需卸载 Node
 - 提示"文件已损坏,建议移到废纸篓":
   打开"终端"(Terminal),粘贴下面这行并回车,再重新打开应用:
   xattr -dr com.apple.quarantine /Applications/DSH\ GUI.app
