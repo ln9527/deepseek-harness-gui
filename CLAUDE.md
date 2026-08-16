@@ -45,6 +45,7 @@ Setup quirks: pnpm 10 blocks postinstall scripts — if `node_modules/electron/d
 - Global `uncaughtException`/`unhandledRejection` handlers in `main.ts` log-and-keep-alive (also suppresses the Electron crash dialog); a dead shell would orphan the DSH child.
 - mac builds must stay `identity: "-"` — `identity: null` leaves a stale Electron seal and downloaded copies report “文件已损坏” (see Distribution section).
 - Windows CI path assertions must normalize separators (`\` → `/`) — manifest/lookup tests compare `join()` output that differs per host OS.
+- The system-node floor in `node-exec.ts` must track DSH's engines (`^22.19 || >=24`), not just the node:sqlite minimum. Real-machine report: system Node 22.14 passed an old 22.13 floor but lacked `node:zlib` zstd exports (added 22.15) → `dsh-session-persistence-jsonl` import crashed DSH at plugin load. Too-old system Node now falls back to the embedded Electron Node (regression test pins 22.14). If DSH bumps its engines, bump `DSH_NODE_FLOOR`.
 
 ## Distribution, signing & CI
 
