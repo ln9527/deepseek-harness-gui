@@ -11,6 +11,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { patchVersionsRoot } from './patch-glm53.mjs'
+
 /**
  * 跨平台解析 npm:Windows 上 npm 是 npm.cmd 不能被 spawnSync 直接拉起,
  * 统一改用 node 直跑 npm-cli.js(按 node 发行版目录布局探测)。
@@ -59,6 +61,11 @@ function manifestOk() {
   } catch {
     return false
   }
+}
+
+// 目录补丁在跳过路径上也要执行:树已物化时同样需要 glm-5.3(幂等,见 patch-glm53.mjs)
+for (const r of patchVersionsRoot(versionsRoot)) {
+  if (r.changed) console.log(`glm-5.3 catalog patch applied: ${join(runtimeDirName, r.file)}`)
 }
 
 if (manifestOk()) {
@@ -127,4 +134,7 @@ if (existsSync(targetDir)) {
   renameSync(targetDir, `${targetDir}.old-${Date.now()}`)
 }
 renameSync(tmpDir, targetDir)
+for (const r of patchVersionsRoot(versionsRoot)) {
+  if (r.changed) console.log(`glm-5.3 catalog patch applied: ${join(runtimeDirName, r.file)}`)
+}
 console.log(`builtin runtime ready: ${targetDir}`)

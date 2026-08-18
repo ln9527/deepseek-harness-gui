@@ -5,7 +5,7 @@
 【这是什么】
 DeepSeek Harness(DSH)的 Mac 桌面应用。
 安装包已内置全部运行时:不需要安装 Node.js,不需要联网下载,
-唯一要做的只有填写 DeepSeek API Key。
+唯一要做的只有填写 API Key(DeepSeek;也可选配智谱 GLM Coding Plan,见下文)。
 
 【系统要求】
 - macOS 12 或更新
@@ -13,7 +13,7 @@ DeepSeek Harness(DSH)的 Mac 桌面应用。
   (Intel 芯片的 Mac 不适用此包)
 
 【安装步骤】
-1. 双击 DSH-GUI-0.1.1-arm64.dmg
+1. 双击 DSH-GUI-0.1.2-arm64.dmg
 2. 把 DSH GUI 图标拖入旁边的 Applications 文件夹
    (必须拖入 /Applications,否则不会出现在启动台)
 3. 打开启动台(Launchpad),点击 DSH GUI
@@ -27,6 +27,19 @@ DeepSeek Harness(DSH)的 Mac 桌面应用。
 5. 稍等几秒自动启动 → 弹窗提示配置 API Key → 点「去设置」
 6. 在「DeepSeek」一栏粘贴你的 API Key → 保存 → 重启后端
 7. 开始使用(窗口里就是 DSH 完整界面,可建会话/跑任务)
+
+【可选:配置智谱 GLM Coding Plan(使用 GLM-5.3)】
+除 DeepSeek 外,应用也支持智谱 GLM Coding Plan 订阅:
+1. 在 bigmodel.cn 订阅「GLM Coding Plan」,获取智谱 API Key
+2. 打开应用主窗口的「设置」→「模型」分区
+3. 找到 zai-coding-cn(智谱 Coding Plan 国内版)一栏,
+   粘贴 API Key → 保存 → 重启后端
+4. 之后对话窗口底部的模型菜单里就能选到 GLM-5.3(智谱当前旗舰)
+说明:
+- GLM-5.3 思考功能常开,支持多档思考强度(默认最高档),
+  可在模型菜单旁的档位按钮切换
+- 支持 1M 长上下文;底部状态栏照常显示缓存命中率、token 用量等统计
+- 也可以继续用 DeepSeek,两家可同时配置、随时切换
 
 【常见问题】
 - 启动报错含 node:zlib / createZstdDecompress(v0.1.0 已知问题):
@@ -42,5 +55,5 @@ DeepSeek Harness(DSH)的 Mac 桌面应用。
 - 日志位置:管理窗口 →「日志」页
 
 【API Key 说明】
-Key 只保存在你自己电脑的应用设置里,用于本机调用
-DeepSeek 接口,不会上传给任何其他方。
+Key(DeepSeek / 智谱)只保存在你自己电脑的应用设置里,
+用于本机调用对应接口,不会上传给任何其他方。
