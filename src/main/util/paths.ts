@@ -13,6 +13,8 @@ export interface StoragePaths {
   readonly trayIconDir: string
   /** 随安装包内置的 DSH 运行时树(packaged: Resources/resources/dsh-runtime)。 */
   readonly builtinRuntimeRoot: string
+  /** 随 Windows 安装包内置的真 node.exe 目录(node-runtime-win/node.exe)。 */
+  readonly bundledNodeRoot: string
 }
 
 export function resolveStoragePaths(input: {
@@ -30,7 +32,8 @@ export function resolveStoragePaths(input: {
     settingsPath: join(input.userDataDir, 'settings.json'),
     resourceRoot,
     trayIconDir: join(resourceRoot, 'tray'),
-    builtinRuntimeRoot: join(resourceRoot, builtinRuntimeDirName())
+    builtinRuntimeRoot: join(resourceRoot, builtinRuntimeDirName()),
+    bundledNodeRoot: join(resourceRoot, 'node-runtime-win')
   }
 }
 

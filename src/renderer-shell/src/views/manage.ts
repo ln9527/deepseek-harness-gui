@@ -73,9 +73,24 @@ export function mountManage(container: HTMLElement, initialSub?: string): () => 
 
 // ---- 版本 tab ----
 
+/** 简易 semver 比对(与 main 侧 compareVersions 同规则:逐段数值比较)。 */
+function compareVersionStrings(a: string, b: string): number {
+  const pa = a.split(/[.-]/).map((s) => (/^\d+$/.test(s) ? Number(s) : s))
+  const pb = b.split(/[.-]/).map((s) => (/^\d+$/.test(s) ? Number(s) : s))
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i]
+    const y = pb[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
+
 function renderVersions(content: HTMLElement, progress?: InstallProgress): () => void {
   const api = getApi()
   const list = el('div', { class: 'version-list' })
+  const updateBanner = el('div', { class: 'row' })
   const installRow = el('div', { class: 'row' })
   const select = el('select', { class: 'select' }) as HTMLSelectElement
   const installBtn = button('安装其他版本', () => {
@@ -87,10 +102,13 @@ function renderVersions(content: HTMLElement, progress?: InstallProgress): () =>
     })
   })
   const progressPhase = el('p', { class: 'status' })
+  /** 一键更新发起的安装目标:装完自动切换。 */
+  let pendingUpdateVersion: string | null = null
 
   content.append(
     el('h2', {}, 'DSH 版本'),
     list,
+    updateBanner,
     el('h3', {}, '安装其他版本'),
     installRow,
     progressPhase
@@ -173,6 +191,27 @@ function renderVersions(content: HTMLElement, progress?: InstallProgress): () =>
         installBtn.disabled = true
         select.append(el('option', {}, '所有可用版本均已安装'))
       }
+      // 新版本检测:active 落后于 registry latest 时显示一键更新横幅
+      const active = installed.find((v) => v.active)
+      const latest = result.value.latest
+      if (active !== undefined && compareVersionStrings(latest, active.version) > 0) {
+        const updateBtn = button(`一键更新到 ${latest}`, () => {
+          updateBtn.disabled = true
+          pendingUpdateVersion = latest
+          void api.installVersion({ version: latest }).then((r) => {
+            if (!r.ok) {
+              progressPhase.textContent = r.error.message
+              pendingUpdateVersion = null
+              updateBtn.disabled = false
+            }
+          })
+        })
+        clear(updateBanner)
+        updateBanner.append(
+          el('span', { class: 'badge' }, `新版本 ${latest} 可用(当前 ${active.version})`),
+          updateBtn
+        )
+      }
     })
   })
 
@@ -180,7 +219,17 @@ function renderVersions(content: HTMLElement, progress?: InstallProgress): () =>
     if (progress.phase === 'error') {
       progressPhase.textContent = `安装失败:${progress.error ?? ''}`
     } else if (progress.phase === 'done') {
-      progressPhase.textContent = `已安装 ${progress.version}`
+      if (pendingUpdateVersion !== null && progress.version === pendingUpdateVersion) {
+        progressPhase.textContent = `已安装 ${progress.version},正在切换…`
+        pendingUpdateVersion = null
+        void api.selectVersion({ version: progress.version }).then((r) => {
+          if (!r.ok) {
+            progressPhase.textContent = r.error.message
+          }
+        })
+      } else {
+        progressPhase.textContent = `已安装 ${progress.version}`
+      }
       void refresh()
     } else {
       progressPhase.textContent = `正在安装 ${progress.version}(${progress.phase})…`
@@ -225,6 +274,13 @@ function renderSettings(content: HTMLElement): () => void {
       }),
       mkCheck('DSH 崩溃后自动重启', settings.autoRestart, (v) => {
         apply({ autoRestart: v })
+      }),
+      el('h3', {}, 'DSH 更新'),
+      mkCheck('启动时检查新版本', settings.updates.autoCheck, (v) => {
+        apply({ updates: { autoCheck: v } })
+      }),
+      mkCheck('自动安装新版本并切换', settings.updates.autoInstall, (v) => {
+        apply({ updates: { autoInstall: v } })
       }),
       el('h3', {}, '通知'),
       mkCheck('审批请求通知', settings.notifications.approvals, (v) => {

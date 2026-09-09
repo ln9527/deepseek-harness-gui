@@ -1,20 +1,27 @@
 /**
- * Node 运行时选择:优先系统 node(ABI 与 DSH 原生模块匹配),不满足 DSH
- * engines 地板时回退 Electron 内嵌 Node(+--expose-internals)。
- * 解析/判定为纯函数,文件系统与版本探测由调用方注入。
+ * Node 运行时选择:内置真 node.exe(Windows)→ 系统 node → Electron 内嵌
+ * Node(+--expose-internals)。解析/判定为纯函数,文件系统与版本探测由调用方注入。
  */
 
 import { execFileSync } from 'node:child_process'
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+
+import { z } from 'zod'
 
 export interface NodeExecResolution {
   readonly exec: string
   readonly useRunAsNode: boolean
-  readonly source: 'electron' | 'system'
+  readonly source: 'bundled' | 'system' | 'electron'
   readonly reason: string
   /** 需要附加在入口文件之前的 node CLI flag(如 --expose-internals)。 */
   readonly nodeFlags: readonly string[]
+}
+
+/** 随 Windows 安装包内置的真 node.exe(fetch:runtime --platform win32 物化)。 */
+export interface BundledNodeSpec {
+  readonly exec: string
+  readonly version: string
 }
 
 /**
@@ -108,13 +115,29 @@ export function resolveNodeExec(input: {
   readonly electronExecPath: string
   readonly electronNodeVersion: string
   readonly envPath: string
+  /** 内置真 node.exe(仅 Windows 有物化);在位时最优先,理由见下。 */
+  readonly bundledNode?: BundledNodeSpec | null
   readonly exists?: (p: string) => boolean
   readonly nodeVersion?: (nodePath: string) => string | null
 }): NodeExecResolution {
-  // 优先系统 node:npm 安装的原生模块(node-pty / node-addon-require-builtin)
+  // 0) 内置真 node.exe 最优先(Windows)。为什么压过系统 node:真 Node 22 是
+  // 我们锁定并验证过 koffi.view 的运行时,不允许任何一台机器再落到 Electron
+  // 内嵌 Node 上——那个运行时下 koffi.view 原生崩溃,win32 目录选择 worker
+  // 静默死亡(本机 A/B 实测;koffi 3.1.5/3.2.1 无差别)。内置 DSH 树全是
+  // napi 预编译包,无 ABI 顾虑。
+  if (input.bundledNode && satisfiesNodeFloor(input.bundledNode.version)) {
+    return {
+      exec: input.bundledNode.exec,
+      useRunAsNode: false,
+      source: 'bundled',
+      nodeFlags: [],
+      reason: `使用内置 node.exe ${input.bundledNode.version}(Electron 内嵌 Node 下 koffi.view 原生崩溃,win32 目录选择需要真 Node)`
+    }
+  }
+  // 1) 系统 node:npm 安装的原生模块(node-pty / node-addon-require-builtin)
   // 按系统 node ABI 编译,天然匹配;Electron 内嵌 Node 的 ABI 不同,会踩坑。
   // 但系统 node 必须满足 DSH engines 地板(^22.19||>=24),否则缺 API
-  // (如 22.14 缺 node:zlib zstd)会让 DSH 启动即崩 → 回落内嵌 Node。
+  // (如 22.14 缺 node:zlib zstd)会让 DSH 启动即崩 → 继续往下回落。
   const probeVersion = input.nodeVersion ?? systemNodeVersion
   const systemNode = findSystemNode(input.envPath, input.exists)
   let systemVersion: string | null = null
@@ -148,4 +171,31 @@ export function resolveNodeExec(input: {
     `未找到满足 DSH 要求(engines ^22.19||>=24)的运行时:Electron 内嵌 ${input.electronNodeVersion}` +
       (systemNode ? ',系统 node 版本过低' : ',且未找到系统 node')
   )
+}
+
+/** 内置 node 运行时 manifest(fetch 脚本写入;缺失/损坏一律视为不存在)。 */
+const bundledNodeManifestSchema = z.object({
+  version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  installedAt: z.number().int().positive()
+})
+
+/**
+ * 读取内置 node.exe(仅 win32;dev 未物化或 packaged 缺文件时返回 null,
+ * 解析链自然回落系统/Electron node,绝不因此抛错)。
+ */
+export function readBundledNode(
+  bundledNodeRoot: string,
+  platform: NodeJS.Platform = process.platform
+): BundledNodeSpec | null {
+  if (platform !== 'win32') return null
+  const exec = join(bundledNodeRoot, 'node.exe')
+  try {
+    accessSync(exec, constants.X_OK)
+    const manifest = bundledNodeManifestSchema.parse(
+      JSON.parse(readFileSync(join(bundledNodeRoot, '.node-runtime.json'), 'utf8'))
+    )
+    return { exec, version: manifest.version }
+  } catch {
+    return null
+  }
 }

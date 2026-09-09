@@ -1,8 +1,11 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   defaultNodeLookupSpec,
   findSystemNode,
+  readBundledNode,
   resolveNodeExec,
   satisfiesNodeFloor
 } from '../../src/main/dsh-runtime/node-exec'
@@ -108,5 +111,81 @@ describe('resolveNodeExec', () => {
         exists: () => false
       })
     ).toThrow(/运行时/)
+  })
+})
+
+describe('resolveNodeExec: 内置 node.exe(win32 目录选择崩溃回归)', () => {
+  it('内置 node 在位时最优先(压过满足地板的系统 node)', () => {
+    const r = resolveNodeExec({
+      electronExecPath: '/fake/electron',
+      electronNodeVersion: '24.18.1',
+      envPath: '/x',
+      bundledNode: { exec: 'C:\\r\\node-runtime-win\\node.exe', version: '22.22.2' },
+      exists: () => true,
+      nodeVersion: () => 'v22.22.2'
+    })
+    expect(r.source).toBe('bundled')
+    expect(r.useRunAsNode).toBe(false)
+    expect(r.nodeFlags).toEqual([])
+    expect(r.reason).toContain('22.22.2')
+  })
+
+  it('回归(真机 win 报案):无系统 node 时必须走内置 node,而不是 Electron 内嵌 Node', () => {
+    // Electron 43 内嵌 Node 24.18.1 下 koffi.view 原生崩溃 →
+    // win32 目录选择 worker 静默死亡(worker exited before reporting a result)
+    const r = resolveNodeExec({
+      electronExecPath: '/fake/electron',
+      electronNodeVersion: '24.18.1',
+      envPath: '',
+      bundledNode: { exec: '/r/node-runtime-win/node.exe', version: '22.22.2' },
+      exists: () => false
+    })
+    expect(r.source).toBe('bundled')
+    expect(r.exec).toContain('node.exe')
+  })
+
+  it('内置 node 版本异常(低于地板)时不采用,照常回落', () => {
+    const r = resolveNodeExec({
+      electronExecPath: '/fake/electron',
+      electronNodeVersion: '24.18.1',
+      envPath: '',
+      bundledNode: { exec: '/r/node.exe', version: '22.14.0' },
+      exists: () => false
+    })
+    expect(r.source).toBe('electron')
+  })
+})
+
+describe('readBundledNode', () => {
+  it('win32:manifest + node.exe 在位返回 spec;损坏/缺失返回 null;darwin 恒 null', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-bundled-node-'))
+    try {
+      writeFileSync(join(dir, 'node.exe'), 'fake-binary')
+      // 真机上 node.exe 天然带可执行位;mac/linux 下 X_OK 探测要求显式 chmod
+      chmodSync(join(dir, 'node.exe'), 0o755)
+      writeFileSync(
+        join(dir, '.node-runtime.json'),
+        JSON.stringify({ version: '22.22.2', installedAt: 1 })
+      )
+      const spec = readBundledNode(dir, 'win32')
+      expect(spec?.version).toBe('22.22.2')
+      expect(spec?.exec.endsWith('node.exe')).toBe(true)
+
+      // manifest 损坏 → 视为不存在(不抛错)
+      writeFileSync(join(dir, '.node-runtime.json'), '{broken')
+      expect(readBundledNode(dir, 'win32')).toBeNull()
+
+      // manifest 合法但 node.exe 缺失 → 视为不存在
+      writeFileSync(
+        join(dir, '.node-runtime.json'),
+        JSON.stringify({ version: '22.22.2', installedAt: 1 })
+      )
+      rmSync(join(dir, 'node.exe'))
+      expect(readBundledNode(dir, 'win32')).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    // darwin 无内置 node.exe 目录概念,恒 null
+    expect(readBundledNode('/nonexistent', 'darwin')).toBeNull()
   })
 })

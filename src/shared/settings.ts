@@ -35,6 +35,14 @@ export interface ShellFlags {
 
 export const defaultShellFlags: ShellFlags = { apiKeyPromptSeen: false }
 
+/** DSH 新版本检测偏好:autoCheck 开机检查 npm latest;autoInstall 检测到新版自动装并切换。 */
+export interface UpdateSettings {
+  readonly autoCheck: boolean
+  readonly autoInstall: boolean
+}
+
+export const defaultUpdateSettings: UpdateSettings = { autoCheck: true, autoInstall: false }
+
 /** DeepSeek 凭据键的唯一出处(main 判定 / EnvHint / renderer 读写都用它)。 */
 export const DEEPSEEK_ENV_KEYS = {
   apiKey: 'DEEPSEEK_API_KEY',
@@ -48,8 +56,14 @@ export interface ShellSettings {
   readonly notifications: NotificationSettings
   readonly runtime: RuntimeSettings
   readonly autoRestart: boolean
+  readonly updates: UpdateSettings
   readonly flags: ShellFlags
 }
+
+export const updateSettingsSchema = z.object({
+  autoCheck: z.boolean(),
+  autoInstall: z.boolean()
+})
 
 export const shellFlagsSchema = z.object({
   apiKeyPromptSeen: z.boolean()
@@ -88,7 +102,8 @@ export const shellSettingsSchema = z.object({
   notifications: notificationSettingsSchema,
   runtime: runtimeSettingsSchema,
   autoRestart: z.boolean(),
-  // .default():旧 settings.json 无 flags 段时原样通过并补默认值(不触发隔离回退)
+  // .default():旧 settings.json 无 updates/flags 段时原样通过并补默认值(不触发隔离回退)
+  updates: updateSettingsSchema.default(defaultUpdateSettings),
   flags: shellFlagsSchema.default(defaultShellFlags)
 })
 
@@ -99,6 +114,7 @@ export type ShellSettingsPatch = {
   readonly notifications?: Partial<NotificationSettings>
   readonly runtime?: Partial<{ dshHomeOverride: string | null; extraEnv: Readonly<Record<string, string>> }>
   readonly autoRestart?: boolean
+  readonly updates?: Partial<UpdateSettings>
   readonly flags?: Partial<ShellFlags>
 }
 
@@ -109,6 +125,7 @@ export const defaultShellSettings: ShellSettings = deepFreeze({
   notifications: { approvals: true, turnComplete: true, errors: true, onlyWhenHidden: true },
   runtime: { dshHomeOverride: null, extraEnv: {} },
   autoRestart: true,
+  updates: defaultUpdateSettings,
   flags: { apiKeyPromptSeen: false }
 })
 
@@ -127,6 +144,7 @@ export function mergeSettings(current: ShellSettings, patch: ShellSettingsPatch)
         runtimePatch?.extraEnv !== undefined ? { ...runtimePatch.extraEnv } : { ...current.runtime.extraEnv }
     },
     autoRestart: patch.autoRestart !== undefined ? patch.autoRestart : current.autoRestart,
+    updates: { ...current.updates, ...(patch.updates ?? {}) },
     flags: { ...current.flags, ...(patch.flags ?? {}) }
   })
 }

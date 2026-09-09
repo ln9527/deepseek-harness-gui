@@ -11,6 +11,10 @@ extraResources:
     to: resources/tray
   - from: resources/dsh-runtime-win
     to: resources/dsh-runtime-win
+  # 内置真 node.exe:Electron 内嵌 Node 下 koffi.view 原生崩溃,
+  # DSH 的 win32 目录选择 worker 需要真 Node(fetch:runtime --platform win32 物化)
+  - from: resources/node-runtime-win
+    to: resources/node-runtime-win
 asar: true
 win:
   target:

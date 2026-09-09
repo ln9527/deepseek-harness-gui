@@ -12,12 +12,13 @@ import { ok } from './util/result'
 import { SettingsStore } from './settings/store'
 import { syncLoginItem, parseHiddenFlag, isTranslocated } from './auto-launch'
 import { realChildProcessFactory } from './dsh-runtime/child-process'
-import { resolveNodeExec, type NodeExecResolution } from './dsh-runtime/node-exec'
+import { readBundledNode, resolveNodeExec, type NodeExecResolution } from './dsh-runtime/node-exec'
 import { DshRuntimeSupervisor } from './dsh-runtime/supervisor'
 import { createNpmRunner, findNpm } from './dsh-versions/npm-runner'
 import type { InstalledVersion } from './dsh-versions/contracts'
 import { resolveActiveVersion, scanBuiltinVersions, scanInstalledVersions } from './dsh-versions/registry'
 import { VersionInstaller } from './dsh-versions/installer'
+import { checkForUpdate } from './dsh-versions/update-checker'
 import { shouldPromptApiKey } from './deepseek/api-key'
 import { NotifyBridge } from './notify-bridge/bridge'
 import { DshNotifier } from './notify-bridge/notifier'
@@ -73,13 +74,17 @@ function bootstrap(): void {
       })
     })
 
-    // ---- Node 运行时(DSH engines ^22.19||>=24;不满足的系统 node 自动回落内嵌) ----
+    // ---- Node 运行时(DSH engines ^22.19||>=24;内置真 node.exe → 系统 node → 内嵌) ----
     let nodeExec: NodeExecResolution
     try {
       nodeExec = resolveNodeExec({
         electronExecPath: process.execPath,
         electronNodeVersion: process.versions.node,
-        envPath: process.env.PATH ?? ''
+        envPath: process.env.PATH ?? '',
+        // Windows 专属:随安装包内置的真 node.exe。Electron 内嵌 Node(24.x)下
+        // koffi.view 原生崩溃,DSH 的 win32 目录选择 worker 会静默死亡
+        // (「win32 folder dialog worker exited before reporting a result」)。
+        bundledNode: readBundledNode(paths.bundledNodeRoot)
       })
       log.info('node exec resolved', { source: nodeExec.source, reason: nodeExec.reason })
     } catch (error) {
@@ -364,6 +369,60 @@ function bootstrap(): void {
     } else {
       log.info('no DSH version installed —— 进入首装向导')
     }
+
+    // ---- DSH 新版本检测(默认只提醒;设置开启 autoInstall 后自动安装并切换) ----
+    const applyUpdate = (latest: string): void => {
+      settingsStore.update({ pinnedVersion: latest })
+      refreshTarget()
+      void supervisor.restartNow()
+    }
+    const scheduleUpdateCheck = (): void => {
+      if (!settingsStore.get().updates.autoCheck) {
+        return
+      }
+      void checkForUpdate({ npm: npmRunner, activeVersion: activeInstalled?.version ?? null }).then((result) => {
+        if (!result.ok || !result.value.updateAvailable) {
+          return
+        }
+        const latest = result.value.latest
+        log.info('DSH update available', { latest, current: result.value.current })
+        if (!settingsStore.get().updates.autoInstall) {
+          if (Notification.isSupported()) {
+            new Notification({
+              title: '发现 DSH 新版本',
+              body: `${latest} 已发布,打开「管理 → 版本」即可一键更新。`
+            }).show()
+          }
+          return
+        }
+        if (installer.isBusy()) {
+          return
+        }
+        const known =
+          scanInstalledVersions(paths.versionsRoot).some((v) => v.version === latest) ||
+          scanBuiltinVersions(paths.builtinRuntimeRoot).some((v) => v.version === latest)
+        if (known) {
+          applyUpdate(latest)
+          return
+        }
+        const started = installer.start(latest)
+        if (!started.ok) {
+          return
+        }
+        const off = installer.onProgress((progress) => {
+          if (progress.version !== latest) {
+            return
+          }
+          if (progress.phase === 'error') {
+            off()
+          } else if (progress.phase === 'done') {
+            off()
+            applyUpdate(latest)
+          }
+        })
+      })
+    }
+    scheduleUpdateCheck()
   })
 }
 

@@ -8,3 +8,5 @@ dist-win/
 .vite/
 resources/dsh-runtime/
 resources/dsh-runtime-win/
+
+resources/node-runtime-win/

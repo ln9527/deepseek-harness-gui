@@ -42,3 +42,4 @@
 | Skills 加载 | 移植 | dsh-agent-core | 云端已部署 |
 | 助理(assistant)模块 | 新增 | 产品方向 | |
 | 移动端遥控器 | 新增 | 产品方向 | 状态镜像 + 指令回传 + 审批;飞书卡片为通知/快捷皮肤;详见会话记录的方案讨论 |
+| 应用内自动更新 | 新增 | 产品方向 | 壳自更新(electron-updater);macOS 受 ad-hoc 签名阻断需先决策,Windows 无卡点;详见 [AUTO-UPDATE.md](./AUTO-UPDATE.md) |

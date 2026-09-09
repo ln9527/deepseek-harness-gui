@@ -35,8 +35,22 @@ function runNpm(args) {
   execFileSync(exec, [...prefix, ...args], { stdio: 'inherit' })
 }
 
-const PINNED_DSH_VERSION = '0.1.0-rc.6'
+const PINNED_DSH_VERSION = '0.1.2-rc.1'
 const NPM_PACKAGE = '@deepseek-ai/dsh'
+
+/**
+ * 随 Windows 安装包内置的真 node.exe(DSH engines 线内的 22 LTS)。
+ *
+ * 为什么必须内置:Electron 内嵌 Node(43.x → 24.18.1)下 koffi.view() 会原生
+ * 崩溃(FATAL ERROR: Error::New napi_get_last_error_info,本机 A/B 实测,
+ * koffi 3.1.5 / 3.2.1 无差别;真 Node 22 同一调用通过)——DSH 的 win32 文件夹
+ * 选择 worker 恰好在用户选完目录后调它读 UTF-16 路径,于是 worker 一言不发
+ * 地死掉,宿主弹出「win32 folder dialog worker exited before reporting a
+ * result」(上游 discussion #236 / #197 同案)。没有系统 node 的机器
+ * (典型:老师机)恰好走 Electron 内嵌路径,所以必须让真 node.exe 优先。
+ */
+const BUNDLED_NODE_VERSION = '22.22.2'
+const BUNDLED_NODE_URL = `https://nodejs.org/dist/v${BUNDLED_NODE_VERSION}/win-x64/node.exe`
 
 // --platform win32:为 Windows 物化 win32-x64 树(--os/--cpu 选择平台预编译包;
 // --ignore-scripts 跳过 koffi 的本机 cmake 编译,平台预编译包在运行时直接加载)
@@ -67,6 +81,50 @@ function manifestOk() {
 for (const r of patchVersionsRoot(versionsRoot)) {
   if (r.changed) console.log(`glm-5.3 catalog patch applied: ${join(runtimeDirName, r.file)}`)
 }
+
+/**
+ * 物化 win32 内置 Node(node-runtime-win/node.exe + .node-runtime.json)。
+ * 幂等:manifest 版本一致且 node.exe 在位即跳过。与 DSH 树的早退无关,
+ * 每次都要跑到(和 glm 补丁同理)。
+ */
+async function materializeBundledNode() {
+  if (!isWin) return
+  const nodeDir = join(root, 'resources', 'node-runtime-win')
+  const nodeExe = join(nodeDir, 'node.exe')
+  const nodeManifestPath = join(nodeDir, '.node-runtime.json')
+  if (existsSync(nodeManifestPath) && existsSync(nodeExe)) {
+    try {
+      const manifest = JSON.parse(readFileSync(nodeManifestPath, 'utf8'))
+      if (manifest.version === BUNDLED_NODE_VERSION) {
+        console.log(`bundled node ${BUNDLED_NODE_VERSION} already materialized, skip`)
+        return
+      }
+    } catch {
+      // manifest 损坏 → 重新下载
+    }
+  }
+  mkdirSync(nodeDir, { recursive: true })
+  const tmpFile = `${nodeExe}.tmp-${Date.now()}`
+  console.log(`downloading bundled node ${BUNDLED_NODE_VERSION} (win-x64) → ${nodeExe}`)
+  const response = await fetch(BUNDLED_NODE_URL)
+  if (!response.ok) {
+    throw new Error(`bundled node download failed: HTTP ${response.status} ${BUNDLED_NODE_URL}`)
+  }
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (bytes.length < 50 * 1024 * 1024) {
+    throw new Error(`bundled node download looks truncated: ${bytes.length} bytes`)
+  }
+  writeFileSync(tmpFile, bytes)
+  renameSync(tmpFile, nodeExe)
+  writeFileSync(
+    nodeManifestPath,
+    `${JSON.stringify({ version: BUNDLED_NODE_VERSION, installedAt: Date.now() }, null, 2)}\n`,
+    'utf8'
+  )
+  console.log(`bundled node ready: ${nodeExe}`)
+}
+
+await materializeBundledNode()
 
 if (manifestOk()) {
   console.log(`builtin runtime ${runtimeDirName}/${PINNED_DSH_VERSION} already materialized, skip`)
