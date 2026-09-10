@@ -136,7 +136,15 @@ function bootstrap(): void {
       return {
         nodeExec: nodeExec.exec,
         entryPath: target.entryPath,
-        args: [...nodeExec.nodeFlags, target.entryPath, 'web', '--host', '127.0.0.1', '--port', '0'],
+        args: [
+          ...nodeExec.nodeFlags,
+          target.entryPath,
+          'web',
+          '--host', '127.0.0.1',
+          '--port', '0',
+          // 0.1.5 起就绪后会唤起系统默认浏览器;壳自带窗口,必须关掉
+          '--no-open'
+        ],
         env,
         cwd: app.getPath('home')
       }
@@ -173,6 +181,8 @@ function bootstrap(): void {
     bridge.onConnectedChange((connected) => supervisor.setBridgeConnected(connected))
 
     // ---- supervisor ----
+    /** 就绪行解析出的完整本机 URL(含 ?token=…),每次启动覆盖。 */
+    let lastReadyUrl: string | null = null
     const supervisor = new DshRuntimeSupervisor(
       {
         childFactory: realChildProcessFactory,
@@ -187,9 +197,14 @@ function bootstrap(): void {
         },
         onReady: (port) => {
           log.info('DSH ready', { port })
-          mainWindow.loadDsh(`http://127.0.0.1:${port}`)
+          // 0.1.5 起 fence 要求 token:必须加载就绪行里的完整 URL,裸端口会显示
+          // 「dsh web authentication required」。URL 缺失时退回裸端口(旧版兼容)。
+          mainWindow.loadDsh(lastReadyUrl ?? `http://127.0.0.1:${port}`)
           bridge.attach(port)
           maybePromptForApiKey()
+        },
+        onReadyUrl: (url) => {
+          lastReadyUrl = url
         },
         onCrashed: (error) => notifier.notifyCrashed(error)
       }

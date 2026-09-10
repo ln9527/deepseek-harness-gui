@@ -1,6 +1,6 @@
 {
   "name": "dsh-gui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "macOS desktop shell for DeepSeek Harness (DSH)",
   "license": "MIT",
   "private": true,

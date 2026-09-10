@@ -9,7 +9,7 @@ import { getLogger } from '../logger'
 import { createRingBuffer } from '../util/ring-buffer'
 import { err, ok } from '../util/result'
 import type { SpawnedChild, ChildProcessFactory } from './child-process'
-import { parseBannerPort } from './banner-parser'
+import { parseBannerPort, parseBannerUrl } from './banner-parser'
 import { probeHostDescribe } from './describe-probe'
 import {
   computeBackoffDelay,
@@ -39,6 +39,8 @@ export interface SupervisorDeps {
 export interface SupervisorCallbacks {
   onSnapshot?(snapshot: DshRuntimeSnapshot): void
   onReady?(port: number): void
+  /** 就绪行里的完整本机 URL(含 ?token=…);0.1.5 起窗口必须带 token 加载。 */
+  onReadyUrl?(url: string): void
   onCrashed?(error: DshRuntimeError): void
 }
 
@@ -52,6 +54,7 @@ export class DshRuntimeSupervisor {
   private readonly stdoutTail = createRingBuffer<string>(STDIO_TAIL)
   private readonly stderrTail = createRingBuffer<string>(STDIO_TAIL)
   private activeVersion: string | null = null
+  private bannerUrl: string | null = null
   private bridgeConnected = false
   private disposed = false
 
@@ -215,6 +218,10 @@ export class DshRuntimeSupervisor {
         }
         break
       case 'EMIT_READY': {
+        // 先发 onReadyUrl 再发 onReady:onReady 里要用 URL 加载窗口
+        if (this.bannerUrl !== null) {
+          this.callbacks.onReadyUrl?.(this.bannerUrl)
+        }
         this.callbacks.onReady?.(effect.port)
         const probeFn = this.deps.probe ?? probeHostDescribe
         void probeFn(effect.port).then((result) => {
@@ -235,6 +242,7 @@ export class DshRuntimeSupervisor {
 
   private spawnChild(): void {
     const log = getLogger('supervisor')
+    this.bannerUrl = null // 每次启动都是新 token
     const contract = this.deps.spawnContractProvider()
     if (contract === null) {
       log.error('spawn requested but no contract available')
@@ -247,9 +255,13 @@ export class DshRuntimeSupervisor {
     this.currentPid = this.child.pid
     this.child.onStdoutLine((line) => {
       this.stdoutTail.push(line)
+      const url = parseBannerUrl(line)
+      if (url !== null) {
+        this.bannerUrl = url
+      }
       const port = parseBannerPort(line)
       if (port !== null && this.internal.state === 'starting') {
-        log.info('banner parsed', { port })
+        log.info('banner parsed', { port, hasToken: url !== null && url.includes('token=') })
         this.dispatch({ type: 'BANNER_PARSED', port })
       }
     })
