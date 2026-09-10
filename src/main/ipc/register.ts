@@ -201,8 +201,11 @@ async function listRegistry(deps: IpcDeps): Promise<Result<DshRegistryInfo>> {
     return tagsResult
   }
   const sorted = [...versionsResult.value].sort(compareVersions)
+  // latest 字段按设置选通道解析(latest/next/alpha),版本页横幅据此提示
+  const channel = deps.settingsStore.get().updates.channel
+  const channelTag = tagsResult.value[channel] ?? tagsResult.value.latest ?? ''
   const info: DshRegistryInfo = {
-    latest: tagsResult.value.latest ?? sorted[sorted.length - 1] ?? '',
+    latest: channelTag.length > 0 ? channelTag : sorted[sorted.length - 1] ?? '',
     distTags: { ...tagsResult.value },
     versions: sorted
   }

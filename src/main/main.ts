@@ -380,7 +380,11 @@ function bootstrap(): void {
       if (!settingsStore.get().updates.autoCheck) {
         return
       }
-      void checkForUpdate({ npm: npmRunner, activeVersion: activeInstalled?.version ?? null }).then((result) => {
+      void checkForUpdate({
+        npm: npmRunner,
+        activeVersion: activeInstalled?.version ?? null,
+        channel: settingsStore.get().updates.channel
+      }).then((result) => {
         if (!result.ok || !result.value.updateAvailable) {
           return
         }

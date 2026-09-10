@@ -5,6 +5,7 @@
 
 import { compareVersions, type NpmRunner } from './contracts'
 import type { Result } from '../../shared/contracts'
+import type { UpdateChannel } from '../../shared/settings'
 import { errFromUnknown, ok } from '../util/result'
 
 export interface UpdateCheckResult {
@@ -24,17 +25,21 @@ export function isUpdateAvailable(activeVersion: string | null, latest: string):
   return compareVersions(latest, activeVersion) > 0
 }
 
-/** 探测 npm registry 的 latest dist-tag(fail-soft:失败时返回 err,不打断启动)。 */
+/**
+ * 探测 npm registry 的 dist-tag(按设置选通道,默认 latest;fail-soft:失败时返回 err,不打断启动)。
+ * 选定通道缺 tag 时回退 latest。
+ */
 export async function checkForUpdate(deps: {
   readonly npm: Pick<NpmRunner, 'listDistTags'>
   readonly activeVersion: string | null
+  readonly channel?: UpdateChannel
 }): Promise<Result<UpdateCheckResult>> {
   try {
     const tags = await deps.npm.listDistTags()
     if (!tags.ok) {
       return tags
     }
-    const latest = tags.value.latest ?? ''
+    const latest = (deps.channel !== undefined ? tags.value[deps.channel] : undefined) ?? tags.value.latest ?? ''
     return ok({
       latest,
       current: deps.activeVersion,

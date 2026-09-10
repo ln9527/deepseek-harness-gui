@@ -35,7 +35,7 @@ function runNpm(args) {
   execFileSync(exec, [...prefix, ...args], { stdio: 'inherit' })
 }
 
-const PINNED_DSH_VERSION = '0.1.2-rc.1'
+const PINNED_DSH_VERSION = '0.1.5-rc.2'
 const NPM_PACKAGE = '@deepseek-ai/dsh'
 
 /**

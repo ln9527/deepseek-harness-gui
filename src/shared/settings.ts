@@ -35,13 +35,21 @@ export interface ShellFlags {
 
 export const defaultShellFlags: ShellFlags = { apiKeyPromptSeen: false }
 
-/** DSH 新版本检测偏好:autoCheck 开机检查 npm latest;autoInstall 检测到新版自动装并切换。 */
+/** 更新通道:npm dist-tag 名。latest=稳定版,next=候选版,alpha=预览版。 */
+export type UpdateChannel = 'latest' | 'next' | 'alpha'
+export const UPDATE_CHANNELS: readonly UpdateChannel[] = ['latest', 'next', 'alpha']
+
+/**
+ * DSH 新版本检测偏好:autoCheck 开机检查;channel 决定跟踪哪个 dist-tag;
+ * autoInstall 检测到新版自动装并切换。
+ */
 export interface UpdateSettings {
   readonly autoCheck: boolean
   readonly autoInstall: boolean
+  readonly channel: UpdateChannel
 }
 
-export const defaultUpdateSettings: UpdateSettings = { autoCheck: true, autoInstall: false }
+export const defaultUpdateSettings: UpdateSettings = { autoCheck: true, autoInstall: false, channel: 'latest' }
 
 /** DeepSeek 凭据键的唯一出处(main 判定 / EnvHint / renderer 读写都用它)。 */
 export const DEEPSEEK_ENV_KEYS = {
@@ -62,7 +70,9 @@ export interface ShellSettings {
 
 export const updateSettingsSchema = z.object({
   autoCheck: z.boolean(),
-  autoInstall: z.boolean()
+  autoInstall: z.boolean(),
+  // .default():0.1.3 写出的 updates 段无 channel 时原样通过并补默认值(不触发隔离回退)
+  channel: z.enum(['latest', 'next', 'alpha']).default('latest')
 })
 
 export const shellFlagsSchema = z.object({

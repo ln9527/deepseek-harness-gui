@@ -1,7 +1,7 @@
 /** manage 视图:版本面板 / 设置 / 日志 / 关于。 */
 
 import type { DshVersionInfo, InstallProgress } from '../../../shared/ipc-types'
-import { DEEPSEEK_ENV_KEYS, type ShellSettings } from '../../../shared/settings'
+import { DEEPSEEK_ENV_KEYS, type ShellSettings, type UpdateChannel } from '../../../shared/settings'
 import { getApi } from '../lib/api'
 import { button, clear, el } from '../lib/dom'
 
@@ -262,6 +262,24 @@ function renderSettings(content: HTMLElement): () => void {
       })
     }
     const renderStatus = el('span', { class: 'meta' })
+    const mkChannelSelect = (current: UpdateChannel, onChange: (v: UpdateChannel) => void): HTMLElement => {
+      const select = el('select', { class: 'select' }) as HTMLSelectElement
+      for (const [value, label] of [
+        ['latest', '稳定版 (latest)'],
+        ['next', '候选版 (next)'],
+        ['alpha', '预览版 (alpha)']
+      ] as const) {
+        const option = el('option', { value }, label) as HTMLOptionElement
+        if (value === current) {
+          option.selected = true
+        }
+        select.append(option)
+      }
+      select.addEventListener('change', () => {
+        onChange(select.value as UpdateChannel)
+      })
+      return el('label', { class: 'check' }, '更新通道 ', select)
+    }
 
     form.append(
       el('h2', {}, '设置'),
@@ -276,6 +294,9 @@ function renderSettings(content: HTMLElement): () => void {
         apply({ autoRestart: v })
       }),
       el('h3', {}, 'DSH 更新'),
+      mkChannelSelect(settings.updates.channel, (v) => {
+        apply({ updates: { channel: v } })
+      }),
       mkCheck('启动时检查新版本', settings.updates.autoCheck, (v) => {
         apply({ updates: { autoCheck: v } })
       }),
