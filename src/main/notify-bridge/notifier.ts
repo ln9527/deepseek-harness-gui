@@ -16,7 +16,7 @@ import {
   type ApprovalDedupeState,
   type CompletionAggregateState
 } from './dedupe'
-import type { BridgeSignal } from './ws-frame-schemas'
+import type { BridgeSignal } from './session-schemas'
 
 const log = getLogger('notifier')
 
@@ -29,17 +29,13 @@ export interface NotifierDeps {
   readonly onFocusRequested: () => void
 }
 
-/** 会话运行状态缓存:running true→false = 一个 turn 完成。 */
-type RunningMap = Readonly<Record<string, boolean>>
-
 export class DshNotifier {
   private approvalDedupe: ApprovalDedupeState = emptyApprovalDedupe
   private completionAggregate: CompletionAggregateState = emptyCompletionAggregate
-  private runningMap: RunningMap = {}
 
   constructor(private readonly deps: NotifierDeps) {}
 
-  handleSignal(signal: Exclude<BridgeSignal, { kind: 'ignored' }>): void {
+  handleSignal(signal: BridgeSignal): void {
     switch (signal.kind) {
       case 'approval-requested': {
         const observed = observeApproval(this.approvalDedupe, signal.approvalId)
@@ -53,22 +49,28 @@ export class DshNotifier {
         this.approvalDedupe = resolveApproval(this.approvalDedupe, signal.approvalId)
         return
       }
-      case 'session-status': {
-        const wasRunning = this.runningMap[signal.sessionId] === true
-        this.runningMap = { ...this.runningMap, [signal.sessionId]: signal.running }
-        if (wasRunning && !signal.running && this.allowed('turnComplete')) {
+      case 'turn-ended': {
+        if (signal.reason === 'completed') {
+          if (!this.allowed('turnComplete')) return
           const observed = observeCompletion(this.completionAggregate, signal.sessionId, Date.now())
           this.completionAggregate = observed.state
-          if (observed.decision.action === 'notify') {
-            this.show('任务完成', `会话 ${signal.sessionId.slice(0, 8)}`)
-          }
+          if (observed.decision.action === 'notify') this.show('任务完成', `会话 ${signal.sessionId.slice(0, 8)}`)
+          return
         }
+        if (signal.reason === 'error') {
+          if (this.allowed('errors')) this.show('任务失败', truncate(signal.errorMessage ?? `会话 ${signal.sessionId.slice(0, 8)}`))
+          return
+        }
+        if (!this.allowed('turnComplete')) return
+        const title = signal.reason === 'aborted' ? '本轮已中止'
+          : signal.reason === 'blocked' ? '任务受阻'
+            : signal.reason === 'max-tokens' ? '已达输出上限'
+              : signal.reason === 'interrupted' ? '运行被中断' : '本轮已结束'
+        this.show(title, `会话 ${signal.sessionId.slice(0, 8)}`)
         return
       }
-      case 'agent-error': {
-        if (this.allowed('errors')) {
-          this.show('Agent 出错', truncate(signal.message))
-        }
+      case 'observer-error': {
+        if (this.allowed('errors', true)) this.show('通知监测受限', `会话 ${signal.sessionId.slice(0, 8)} 的事件读取不完整，请查看管理 → 日志`)
         return
       }
       default: {

@@ -28,3 +28,8 @@ export function parseBannerUrl(line: string): string | null {
   }
   return FULL_URL.exec(line)?.[0] ?? null
 }
+
+/** Keep the launch URL usable in memory while withholding its token from tails/logs. */
+export function redactLaunchUrl(line: string): string {
+  return line.replace(/([?&]token=)[^&#\s]+/g, '$1[redacted]')
+}

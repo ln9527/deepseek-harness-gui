@@ -1,143 +1,143 @@
-/**
- * NotifyBridge 回归测试(修过的线上 bug:把 ws 的 message 回调当浏览器 API 用,
- * 访问 event.data → undefined.toString() 崩掉主进程)。
- * 用 ws 真实签名 (data: RawData, isBinary) 驱动 fake socket。
- */
+import { describe, expect, it, vi } from 'vitest'
+import { NotifyBridge, readOnlySessionRpc, sessionCookieName, type ReadonlyRpc } from '../../src/main/notify-bridge/bridge'
+import type { BridgeSignal } from '../../src/main/notify-bridge/session-schemas'
 
-import { Buffer } from 'node:buffer'
-import { describe, expect, it } from 'vitest'
-import type { RawData } from 'ws'
-import { NotifyBridge, rawDataToString, type BridgeSocket } from '../../src/main/notify-bridge/bridge'
-import type { BridgeSignal } from '../../src/main/notify-bridge/ws-frame-schemas'
+type RecordValue = { type: string; seq: number; time: number; data: unknown }
+const record = (seq: number, type: string, data: unknown): RecordValue => ({ seq, type, time: 100 + seq, data })
 
-class FakeSocket implements BridgeSocket {
-  private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>()
-  closed = false
-
-  constructor(readonly url: string) {}
-
-  on(event: 'open', listener: () => void): void
-  on(event: 'message', listener: (data: RawData, isBinary: boolean) => void): void
-  on(event: 'close', listener: (code: number, reason: Buffer) => void): void
-  on(event: 'error', listener: (error: Error) => void): void
-  on(event: string, listener: (...args: never[]) => void): void {
-    const list = this.listeners.get(event) ?? []
-    list.push(listener as (...args: unknown[]) => void)
-    this.listeners.set(event, list)
+function fakeRuntime(records: RecordValue[], running = true) {
+  const calls: string[] = []
+  const rpc: ReadonlyRpc = async (_port, cookie, endpoint, args) => {
+    expect(cookie).toBe('auth=cookie')
+    calls.push(endpoint)
+    if (endpoint === 'session/list') return { items: [{ sessionId: 's1', running, projections: { asOfSeq: records.at(-1)?.seq ?? -1, values: {} } }] }
+    const request = args.request as { throughSeq: number; beforeSeq?: number }
+    const end = Math.min(request.throughSeq + 1, request.beforeSeq ?? request.throughSeq + 1)
+    const start = Math.max(0, end - 2)
+    return { records: records.slice(start, end).map((event) => ({ type: 'event', event })), hasMore: start > 0 }
   }
-
-  close(): void {
-    if (!this.closed) {
-      this.closed = true
-      this.emit('close', 1006, Buffer.alloc(0))
-    }
-  }
-
-  emit(event: string, ...args: unknown[]): void {
-    for (const listener of [...(this.listeners.get(event) ?? [])]) {
-      listener(...args)
-    }
-  }
-
-  /** 按 ws 的真实签名触发 message:data 在第一位,没有 event 对象。 */
-  emitMessage(data: RawData): void {
-    this.emit('message', data, false)
-  }
+  return { rpc, calls, setRunning: (value: boolean) => { running = value } }
 }
 
-function makeBridge(): { bridge: NotifyBridge; sockets: FakeSocket[] } {
-  const sockets: FakeSocket[] = []
-  const bridge = new NotifyBridge({
-    reconnectDelayMs: 5,
-    socketFactory: (url) => {
-      const socket = new FakeSocket(url)
-      sockets.push(socket)
-      return socket
-    }
-  })
-  return { bridge, sockets }
-}
-
-const approvalFrame = JSON.stringify({
-  type: 'server-request',
-  rpcId: 'r1',
-  method: 'approval/requested',
-  payload: { type: 'approval/requested', sessionId: 's1', approvalId: 'a1', toolName: 'bash' }
-})
-
-describe('rawDataToString', () => {
-  it('覆盖 ws 的全部 RawData 形态(防御性含 string)', () => {
-    expect(rawDataToString(Buffer.from(approvalFrame))).toBe(approvalFrame)
-    expect(rawDataToString(new TextEncoder().encode(approvalFrame).buffer as ArrayBuffer)).toBe(approvalFrame)
-    const chunk = Buffer.from(approvalFrame)
-    const mid = Math.floor(chunk.length / 2)
-    expect(rawDataToString([chunk.subarray(0, mid), chunk.subarray(mid)])).toBe(approvalFrame)
-    expect(rawDataToString(approvalFrame as unknown as RawData)).toBe(approvalFrame)
-  })
-})
-
-describe('NotifyBridge(fake socket,ws 签名)', () => {
-  it('Buffer 帧正确解析为信号;Buffer[]/ArrayBuffer 形态不崩', () => {
-    const { bridge, sockets } = makeBridge()
-    const signals: Exclude<BridgeSignal, { kind: 'ignored' }>[] = []
-    bridge.onSignal((s) => {
-      signals.push(s)
-    })
+describe('read-only notification polling', () => {
+  it('waits for the browser cookie, restores only current pending approval, then reads completion', async () => {
+    const records = [
+      record(0, 'turn/start', { turn: 1 }),
+      record(1, 'approval/asked', { id: 'a1', toolName: 'bash' })
+    ]
+    const runtime = fakeRuntime(records)
+    let cookie: string | null = null
+    const bridge = new NotifyBridge({ cookieProvider: async () => cookie, rpc: runtime.rpc, pollIntervalMs: 60_000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
     bridge.attach(4321)
-    expect(sockets.length).toBe(2)
-    expect(sockets[0]?.url).toContain('/api/events.mux')
-    expect(sockets[1]?.url).toContain('/api/events.host')
-    for (const socket of sockets) {
-      socket.emit('open')
-    }
+    await bridge.pollNow()
+    expect(runtime.calls).toEqual([])
+    expect(bridge.isConnected()).toBe(false)
+    cookie = 'auth=cookie'
+    await bridge.pollNow()
+    expect(signals).toEqual([{ kind: 'approval-requested', sessionId: 's1', approvalId: 'a1', toolName: 'bash', reason: null }])
+    records.push(record(2, 'approval/decided', { id: 'a1', outcome: 'allowed-once' }))
+    records.push(record(3, 'turn/end', { turn: 1, reason: { kind: 'completed' } }))
+    runtime.setRunning(false)
+    await bridge.pollNow()
+    expect(signals.slice(1)).toEqual([
+      { kind: 'approval-resolved', sessionId: 's1', approvalId: 'a1' },
+      { kind: 'turn-ended', sessionId: 's1', reason: 'completed', errorMessage: null }
+    ])
+    expect(new Set(runtime.calls)).toEqual(new Set(['session/list', 'session/page']))
+    bridge.detach()
+    bridge.attach(4321)
+    await bridge.pollNow()
+    expect(signals).toHaveLength(3) // old completed turn is not replayed on startup
+    bridge.detach()
+  })
+
+  it('pages back through the open turn and suppresses approvals decided in the same poll', async () => {
+    const records = [
+      record(0, 'turn/end', { turn: 0, reason: { kind: 'completed' } }),
+      record(1, 'turn/start', { turn: 1 }),
+      record(2, 'approval/asked', { id: 'a1', toolName: 'tool' }),
+      record(3, 'tool/call', {}),
+      record(4, 'tool/result', {}),
+      record(5, 'tool/call', {})
+    ]
+    const runtime = fakeRuntime(records)
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: runtime.rpc, pollIntervalMs: 60_000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
+    bridge.attach(4321)
+    await bridge.pollNow()
+    expect(signals).toEqual([{ kind: 'approval-requested', sessionId: 's1', approvalId: 'a1', toolName: 'tool', reason: null }])
+    expect(runtime.calls.filter((call) => call === 'session/page')).toHaveLength(3)
+    records.push(record(6, 'approval/decided', { id: 'a1', outcome: 'rejected' }))
+    records.push(record(7, 'approval/asked', { id: 'a2', toolName: 'brief' }))
+    records.push(record(8, 'approval/decided', { id: 'a2', outcome: 'rejected' }))
+    await bridge.pollNow()
+    expect(signals.slice(1)).toEqual([{ kind: 'approval-resolved', sessionId: 's1', approvalId: 'a1' }])
+    bridge.detach()
+  })
+
+  it('clears a pending reminder when the session stops without a new readable event', async () => {
+    const records = [record(0, 'turn/start', { turn: 1 }), record(1, 'approval/asked', { id: 'a1', toolName: 'bash' })]
+    const runtime = fakeRuntime(records)
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: runtime.rpc, pollIntervalMs: 60_000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
+    bridge.attach(4321)
+    await bridge.pollNow()
+    runtime.setRunning(false)
+    await bridge.pollNow()
+    expect(signals.at(-1)).toEqual({ kind: 'approval-resolved', sessionId: 's1', approvalId: 'a1' })
+    bridge.detach()
+  })
+
+  it('does not let an old generation emit after port replacement', async () => {
+    let release: ((value: unknown) => void) | undefined
+    const deferred = new Promise<unknown>((resolve) => { release = resolve })
+    const rpc: ReadonlyRpc = async (port) => port === 4321 ? deferred : { items: [] }
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc, pollIntervalMs: 60_000 })
+    bridge.attach(4321)
+    const oldPoll = bridge.pollNow()
+    bridge.attach(4322)
+    await bridge.pollNow()
+    release?.({ items: [{ sessionId: 'stale', running: false, projections: { asOfSeq: -1 } }] })
+    await oldPoll
     expect(bridge.isConnected()).toBe(true)
-
-    sockets[0]?.emitMessage(Buffer.from(approvalFrame))
-    sockets[1]?.emitMessage([Buffer.from(approvalFrame)])
-    const encoded = new TextEncoder().encode(approvalFrame).buffer as ArrayBuffer
-    sockets[1]?.emitMessage(encoded)
-    expect(signals.length).toBe(3)
-    expect(signals[0]?.kind).toBe('approval-requested')
-
     bridge.detach()
   })
 
-  it('垃圾帧被计入 ignored,不抛异常', () => {
-    const { bridge, sockets } = makeBridge()
+  it('marks the bridge unhealthy when the initial turn exceeds the page budget', async () => {
+    const records = [record(0, 'turn/start', { turn: 1 }),
+      ...Array.from({ length: 499 }, (_, index) => record(index + 1, 'tool/call', {}))]
+    const runtime = fakeRuntime(records)
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: runtime.rpc, pollIntervalMs: 60_000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
     bridge.attach(4321)
-    sockets[0]?.emit('open')
-    expect(() => sockets[0]?.emitMessage(Buffer.from('<html>not ws frame</html>'))).not.toThrow()
-    expect(bridge.getIgnoredCount()).toBe(1)
+    await bridge.pollNow()
+    expect(bridge.isConnected()).toBe(false)
+    expect(signals).toEqual([{ kind: 'observer-error', sessionId: 's1' }])
+    expect(runtime.calls.filter((call) => call === 'session/page')).toHaveLength(200)
     bridge.detach()
   })
+})
 
-  it('断线后按重连间隔重建连接', async () => {
-    const { bridge, sockets } = makeBridge()
-    const connected: boolean[] = []
-    bridge.onConnectedChange((c) => {
-      connected.push(c)
+describe('bundled RPC envelope', () => {
+  it('sends only a cookie-bound read call to /api/session/list', async () => {
+    const original = globalThis.fetch
+    const send = vi.fn(async (_url: unknown, options: RequestInit) => {
+      const message = JSON.parse(options.body as string) as { rpcId: string; method: string; payload: unknown }
+      expect(message.method).toBe('session/list')
+      expect(message.payload).toEqual({ args: { _request: {} } })
+      expect(options.headers).toMatchObject({ cookie: 'dsh-auth-x=value', origin: 'http://127.0.0.1:4321' })
+      return { ok: true, json: async () => ({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value: { items: [] } } }) } as Response
     })
-    bridge.attach(4321)
-    for (const socket of sockets) {
-      socket.emit('open')
-    }
-    sockets[0]?.emit('close', 1000, Buffer.alloc(0))
-    await new Promise((resolve) => {
-      setTimeout(resolve, 40)
-    })
-    expect(sockets.length).toBe(4) // 首轮 2 + 重连 2
-    bridge.detach()
-  })
-
-  it('detach 后不再重连', async () => {
-    const { bridge, sockets } = makeBridge()
-    bridge.attach(4321)
-    sockets[0]?.emit('open')
-    bridge.detach()
-    sockets[0]?.emit('close', 1000, Buffer.alloc(0))
-    await new Promise((resolve) => {
-      setTimeout(resolve, 30)
-    })
-    expect(sockets.length).toBe(2)
+    globalThis.fetch = send as typeof fetch
+    try {
+      expect(await readOnlySessionRpc(4321, 'dsh-auth-x=value', 'session/list', { _request: {} }, new AbortController().signal)).toEqual({ items: [] })
+      expect(send.mock.calls[0]?.[0]).toBe('http://127.0.0.1:4321/api/session/list')
+      expect(sessionCookieName(4321)).toMatch(/^dsh-auth-[A-Za-z0-9_-]+$/)
+    } finally { globalThis.fetch = original }
   })
 })

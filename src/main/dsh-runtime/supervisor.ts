@@ -9,7 +9,7 @@ import { getLogger } from '../logger'
 import { createRingBuffer } from '../util/ring-buffer'
 import { err, ok } from '../util/result'
 import type { SpawnedChild, ChildProcessFactory } from './child-process'
-import { parseBannerPort, parseBannerUrl } from './banner-parser'
+import { parseBannerPort, parseBannerUrl, redactLaunchUrl } from './banner-parser'
 import { probeHostDescribe } from './describe-probe'
 import {
   computeBackoffDelay,
@@ -254,7 +254,7 @@ export class DshRuntimeSupervisor {
     this.child = this.deps.childFactory.spawn(contract)
     this.currentPid = this.child.pid
     this.child.onStdoutLine((line) => {
-      this.stdoutTail.push(line)
+      this.stdoutTail.push(redactLaunchUrl(line))
       const url = parseBannerUrl(line)
       if (url !== null) {
         this.bannerUrl = url
@@ -266,8 +266,9 @@ export class DshRuntimeSupervisor {
       }
     })
     this.child.onStderrLine((line) => {
-      this.stderrTail.push(line)
-      log.debug('[dsh-stderr]', line)
+      const safeLine = redactLaunchUrl(line)
+      this.stderrTail.push(safeLine)
+      log.debug('[dsh-stderr]', safeLine)
     })
     this.child.onExit((code) => {
       this.child = null

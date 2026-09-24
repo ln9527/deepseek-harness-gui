@@ -21,7 +21,7 @@ import { resolveActiveVersion, scanBuiltinVersions, scanInstalledVersions } from
 import { VersionInstaller } from './dsh-versions/installer'
 import { checkForUpdate } from './dsh-versions/update-checker'
 import { shouldPromptApiKey } from './deepseek/api-key'
-import { NotifyBridge } from './notify-bridge/bridge'
+import { NotifyBridge, sessionCookieName } from './notify-bridge/bridge'
 import { DshNotifier } from './notify-bridge/notifier'
 import { MainWindowController } from './windows/main-window'
 import { ManageWindowController } from './windows/manage-window'
@@ -183,7 +183,24 @@ function bootstrap(): void {
     void desktopAuth.refresh()
 
     // ---- 通知桥 ----
-    const bridge = new NotifyBridge()
+    const bridge = new NotifyBridge({
+      cookieProvider: async (port) => {
+        const origin = `http://127.0.0.1:${port}`
+        const currentUrl = mainWindow.getWindow().webContents.getURL()
+        // A stored cookie alone is insufficient: wait until this window has
+        // completed the launch-token redirect to the clean DSH page.
+        try {
+          const page = new URL(currentUrl)
+          if (page.origin !== origin || page.searchParams.has('token')) return null
+        } catch { return null }
+        const name = sessionCookieName(port)
+        const cookies = await mainWindow.getWindow().webContents.session.cookies.get({
+          url: `${origin}/`, name
+        })
+        const cookie = cookies.find((item) => item.name === name && item.httpOnly)
+        return cookie === undefined ? null : `${name}=${cookie.value}`
+      }
+    })
     const notifier = new DshNotifier({
       getSettings: () => settingsStore.get().notifications,
       isMainWindowVisible: () => mainWindow.isWindowVisible(),
@@ -204,6 +221,7 @@ function bootstrap(): void {
       },
       {
         onSnapshot: (snapshot) => {
+          if (snapshot.state !== 'ready') bridge.detach()
           reconcileViews(snapshot)
           tray.update(snapshot, settingsStore.get())
           broadcastSnapshot(snapshot)

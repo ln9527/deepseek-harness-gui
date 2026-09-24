@@ -1,214 +1,205 @@
-/**
- * WS 通知桥:两条 downlink 连接(events.mux + events.host)。
- * 只收不发(客户端发帧 = 服务端 close 1008,协议规定)。
- * 显式带同源 Origin 头过信任围栏;断线 1s 重连(仅在 attach 状态);
- * 任何错误只影响桥自身(supervisor 状态机的 bridgeConnected 展示)。
- */
-
-import WebSocket, { type RawData } from 'ws'
+/** Read-only durable Session polling for bundled DSH 0.1.5-rc.2. */
+import { createHash, randomUUID } from 'node:crypto'
 import { getLogger } from '../logger'
-import { parseWsFrame, type BridgeSignal, type IgnoredReason } from './ws-frame-schemas'
+import { advanceJournal, initializeJournal, type JournalState } from './journal'
+import { parseSessionList, parseSessionPage, type BridgeSignal, type SessionRecord } from './session-schemas'
 
 const log = getLogger('notify-bridge')
+const PAGE_MESSAGES = 50
+const MAX_PAGES_PER_POLL = 200
 
-const MUX_PATH = '/api/events.mux'
-const HOST_PATH = '/api/events.host'
-
-type SignalListener = (signal: Exclude<BridgeSignal, { kind: 'ignored' }>) => void
-type IgnoredListener = (reason: IgnoredReason) => void
+type SignalListener = (signal: BridgeSignal) => void
 type ConnectedListener = (connected: boolean) => void
-
-/** ws 包的连接面(注入可测;注意 message 回调签名是 (data, isBinary),非浏览器 API)。 */
-export interface BridgeSocket {
-  on(event: 'open', listener: () => void): void
-  on(event: 'message', listener: (data: RawData, isBinary: boolean) => void): void
-  on(event: 'close', listener: (code: number, reason: Buffer) => void): void
-  on(event: 'error', listener: (error: Error) => void): void
-  close(): void
-}
-
+export type ReadonlyRpc = (port: number, cookie: string, endpoint: 'session/list' | 'session/page', args: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>
 export interface BridgeOptions {
-  readonly reconnectDelayMs?: number
-  readonly socketFactory?: (url: string, origin: string) => BridgeSocket
+  readonly cookieProvider: (port: number) => Promise<string | null>
+  readonly rpc?: ReadonlyRpc
+  readonly pollIntervalMs?: number
 }
 
-interface Conn {
-  readonly socket: BridgeSocket
-  readonly stream: 'mux' | 'host'
-  open: boolean
+/** BrowserAuth hashes the exact Host authority into its HttpOnly cookie name. */
+export function sessionCookieName(port: number): string {
+  return `dsh-auth-${createHash('sha256').update(`127.0.0.1:${port}`).digest('base64url')}`
 }
 
-/** RawData(Buffer | ArrayBuffer | Buffer[])→ UTF-8 字符串。 */
-export function rawDataToString(data: RawData): string {
-  if (typeof data === 'string') {
-    return data
+/** Only the two explicitly allowed read endpoints can be called. */
+export const readOnlySessionRpc: ReadonlyRpc = async (port, cookie, endpoint, args, signal) => {
+  const rpcId = randomUUID()
+  const response = await fetch(`http://127.0.0.1:${port}/api/${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'origin': `http://127.0.0.1:${port}`,
+      'cookie': cookie
+    },
+    body: JSON.stringify({ type: 'client-request', rpcId, method: endpoint, payload: { args } }),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(5000)])
+  })
+  if (!response.ok) throw new Error(`Session RPC HTTP ${response.status}`)
+  const body: unknown = await response.json()
+  if (typeof body !== 'object' || body === null || !('type' in body) || body.type !== 'server-response' ||
+      !('rpcId' in body) || body.rpcId !== rpcId || !('result' in body) || typeof body.result !== 'object' || body.result === null) {
+    throw new Error('invalid Session RPC response')
   }
-  if (Array.isArray(data)) {
-    return Buffer.concat(data).toString('utf8')
-  }
-  if (data instanceof ArrayBuffer) {
-    return Buffer.from(data).toString('utf8')
-  }
-  return Buffer.isBuffer(data) ? data.toString('utf8') : String(data)
+  const result = body.result as { ok?: unknown; value?: unknown; error?: { code?: string } }
+  if (result.ok !== true) throw new Error(`Session RPC failed: ${result.error?.code ?? 'unknown'}`)
+  return result.value
 }
-
-const defaultSocketFactory = (url: string, origin: string): BridgeSocket =>
-  new WebSocket(url, { headers: { Origin: origin }, handshakeTimeout: 5000 }) as unknown as BridgeSocket
 
 export class NotifyBridge {
-  private conns: readonly Conn[] = []
-  private attachedPort: number | null = null
-  private reconnectTimer: NodeJS.Timeout | null = null
+  private port: number | null = null
+  private generation = 0
+  private controller: AbortController | null = null
+  private timer: NodeJS.Timeout | null = null
+  private inFlight: Promise<void> | null = null
+  private connected = false
+  private readonly journals = new Map<string, JournalState>()
+  private readonly degradedSessions = new Set<string>()
   private readonly signalListeners = new Set<SignalListener>()
-  private readonly ignoredListeners = new Set<IgnoredListener>()
   private readonly connectedListeners = new Set<ConnectedListener>()
-  private ignoredCount = 0
 
-  constructor(private readonly options: BridgeOptions = {}) {}
-
+  constructor(private readonly options: BridgeOptions) {}
   attach(port: number): void {
-    if (this.attachedPort === port) {
-      return
-    }
+    if (this.port === port) return
     this.detach()
-    this.attachedPort = port
-    log.info('bridge attaching', { port })
-    this.connect(port)
+    this.port = port
+    this.controller = new AbortController()
+    this.schedule(0)
   }
-
   detach(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-    this.attachedPort = null
-    for (const conn of this.conns) {
-      try {
-        conn.socket.close()
-      } catch {
-        // 已断开则忽略
-      }
-    }
-    this.conns = []
-    this.setConnectedState()
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    this.generation++
+    this.controller?.abort()
+    this.controller = null
+    this.port = null
+    this.inFlight = null
+    this.journals.clear()
+    this.degradedSessions.clear()
+    this.setConnected(false)
   }
+  isConnected(): boolean { return this.connected }
+  onSignal(listener: SignalListener): () => void { this.signalListeners.add(listener); return () => { this.signalListeners.delete(listener) } }
+  onConnectedChange(listener: ConnectedListener): () => void { this.connectedListeners.add(listener); return () => { this.connectedListeners.delete(listener) } }
 
-  isConnected(): boolean {
-    return this.conns.length > 0 && this.conns.every((c) => c.open)
+  /** Exposed for deterministic tests and a manual refresh; scheduled polls use the same path. */
+  pollNow(): Promise<void> {
+    if (this.port === null || this.controller === null) return Promise.resolve()
+    if (this.inFlight) return this.inFlight
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    const port = this.port
+    const generation = this.generation
+    const signal = this.controller.signal
+    const work = this.poll(port, generation, signal).catch((error: unknown) => {
+      if (!this.isCurrent(port, generation)) return
+      this.setConnected(false)
+      log.warn('read-only Session poll failed', { error: error instanceof Error ? error.message : String(error) })
+    }).finally(() => {
+      if (this.inFlight === work) this.inFlight = null
+      if (this.isCurrent(port, generation)) this.schedule(this.options.pollIntervalMs ?? 2000)
+    })
+    this.inFlight = work
+    return work
   }
-
-  getIgnoredCount(): number {
-    return this.ignoredCount
-  }
-
-  onSignal(listener: SignalListener): () => void {
-    this.signalListeners.add(listener)
-    return () => {
-      this.signalListeners.delete(listener)
-    }
-  }
-
-  onIgnored(listener: IgnoredListener): () => void {
-    this.ignoredListeners.add(listener)
-    return () => {
-      this.ignoredListeners.delete(listener)
-    }
-  }
-
-  onConnectedChange(listener: ConnectedListener): () => void {
-    this.connectedListeners.add(listener)
-    return () => {
-      this.connectedListeners.delete(listener)
-    }
-  }
-
-  private connect(port: number): void {
-    const factory = this.options.socketFactory ?? defaultSocketFactory
-    const origin = `http://127.0.0.1:${port}`
-    const mk = (stream: 'mux' | 'host', path: string): Conn => {
-      const socket = factory(`ws://127.0.0.1:${port}${path}`, origin)
-      const conn: Conn = { socket, stream, open: false }
-      socket.on('open', () => {
-        conn.open = true
-        log.info('stream open', { stream })
-        this.setConnectedState()
-      })
-      socket.on('message', (data) => {
-        // fail-soft:任何单帧处理异常都不得冒泡成 uncaughtException
-        try {
-          this.handleRaw(stream, rawDataToString(data))
-        } catch (error) {
-          log.error('frame handler threw (ignored)', {
-            stream,
-            error: error instanceof Error ? error.message : String(error)
-          })
+  private async poll(port: number, generation: number, signal: AbortSignal): Promise<void> {
+    const cookie = await this.options.cookieProvider(port)
+    if (!this.isCurrent(port, generation)) return
+    if (cookie === null) { this.setConnected(false); return }
+    const rpc = this.options.rpc ?? readOnlySessionRpc
+    const summaries = parseSessionList(await rpc(port, cookie, 'session/list', { _request: {} }, signal))
+    if (!this.isCurrent(port, generation)) return
+    let healthy = true
+    for (const summary of summaries) {
+      if (!this.isCurrent(port, generation)) return
+      // Subagent history needs a parent address and mode; omit it until that contract is available.
+      if (summary.origin === 'subagent') continue
+      const previous = this.journals.get(summary.sessionId)
+      const cursor = summary.projections?.asOfSeq
+      if (cursor === undefined) {
+        if (previous && !summary.running && previous.pending.size > 0) {
+          const result = advanceJournal(summary.sessionId, previous, previous.cursor, [], false)
+          this.journals.set(summary.sessionId, result.state)
+          for (const notification of result.signals) this.emit(notification)
         }
-      })
-      socket.on('error', (error) => {
-        log.debug('stream error', { stream, error: error.message })
-      })
-      socket.on('close', () => {
-        conn.open = false
-        this.setConnectedState()
-        // 只对"当前代"连接触发重连:重连清理/detach 时主动关闭的旧连接不算断线
-        if (this.conns.includes(conn)) {
-          this.scheduleReconnect()
-        }
-      })
-      return conn
-    }
-    this.conns = [mk('mux', MUX_PATH), mk('host', HOST_PATH)]
-  }
-
-  private handleRaw(stream: 'mux' | 'host', raw: string): void {
-    const signal = parseWsFrame(raw)
-    if (signal.kind === 'ignored') {
-      this.ignoredCount += 1
-      log.debug('frame ignored', { stream, reason: signal.reason })
-      for (const listener of [...this.ignoredListeners]) {
-        listener(signal.reason)
+        continue
       }
-      return
-    }
-    for (const listener of [...this.signalListeners]) {
+      if (previous?.cursor === cursor) {
+        if (!summary.running && previous.pending.size > 0) {
+          const result = advanceJournal(summary.sessionId, previous, cursor, [], false)
+          this.journals.set(summary.sessionId, result.state)
+          for (const notification of result.signals) this.emit(notification)
+        }
+        continue
+      }
+      if (previous && cursor < previous.cursor) { this.journals.delete(summary.sessionId); continue }
       try {
-        listener(signal)
+        const records = cursor < 0 || (previous === undefined && !summary.running)
+          ? []
+          : await this.readPages(rpc, port, cookie, summary.sessionId, cursor, previous?.cursor, signal)
+        if (!this.isCurrent(port, generation)) return
+        const result = previous === undefined
+          ? initializeJournal(summary.sessionId, cursor, records, summary.running)
+          : advanceJournal(summary.sessionId, previous, cursor, records, summary.running)
+        this.journals.set(summary.sessionId, result.state)
+        this.degradedSessions.delete(summary.sessionId)
+        for (const notification of result.signals) this.emit(notification)
       } catch (error) {
-        log.error('signal listener threw', {
-          error: error instanceof Error ? error.message : String(error)
-        })
-      }
-    }
-  }
-
-  private scheduleReconnect(): void {
-    if (this.attachedPort === null || this.reconnectTimer !== null) {
-      return
-    }
-    const port = this.attachedPort
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null
-      if (this.attachedPort === port) {
-        log.info('bridge reconnecting', { port })
-        // 先摘牌再关闭:旧连接的 close 不允许再次触发重连调度
-        const stale = this.conns
-        this.conns = []
-        for (const conn of stale) {
-          try {
-            conn.socket.close()
-          } catch {
-            // 已断开则忽略
-          }
+        if (signal.aborted) return
+        healthy = false
+        log.warn('Session journal unavailable', { sessionId: summary.sessionId, error: error instanceof Error ? error.message : String(error) })
+        if (!this.degradedSessions.has(summary.sessionId)) {
+          this.degradedSessions.add(summary.sessionId)
+          this.emit({ kind: 'observer-error', sessionId: summary.sessionId })
         }
-        this.connect(port)
       }
-    }, this.options.reconnectDelayMs ?? 1000)
-  }
-
-  private setConnectedState(): void {
-    const connected = this.isConnected()
-    for (const listener of [...this.connectedListeners]) {
-      listener(connected)
     }
+    if (this.isCurrent(port, generation)) this.setConnected(healthy)
+  }
+  private async readPages(rpc: ReadonlyRpc, port: number, cookie: string, sessionId: string, cursor: number, previousCursor: number | undefined, signal: AbortSignal): Promise<SessionRecord[]> {
+    const pages: SessionRecord[][] = []
+    let beforeSeq: number | undefined
+    for (let count = 0; count < MAX_PAGES_PER_POLL; count++) {
+      const request = { address: { kind: 'session', sessionId }, throughSeq: cursor, maxMessages: PAGE_MESSAGES,
+        ...(beforeSeq === undefined ? {} : { beforeSeq }) }
+      const page = parseSessionPage(await rpc(port, cookie, 'session/page', { request }, signal))
+      const records = page.records.map((entry) => entry.event)
+      if (records.length === 0) {
+        if (page.hasMore) throw new Error('empty Session page with more history')
+        break
+      }
+      for (let index = 1; index < records.length; index++) {
+        if (records[index]!.seq !== records[index - 1]!.seq + 1) throw new Error('Session page is not contiguous')
+      }
+      if (beforeSeq !== undefined && records.at(-1)!.seq !== beforeSeq - 1) throw new Error('Session pages have a gap')
+      pages.push(records)
+      const first = records[0]!.seq
+      if (previousCursor !== undefined && first <= previousCursor + 1) break
+      if (previousCursor === undefined && records.some((record) => record.type === 'turn/start' || record.type === 'turn/end')) break
+      if (!page.hasMore) break
+      if (first === 0) throw new Error('Session page reports history before seq 0')
+      beforeSeq = first
+      if (count === MAX_PAGES_PER_POLL - 1) throw new Error('Session history exceeds polling page budget')
+    }
+    const all = pages.reverse().flat()
+    const suffix = previousCursor === undefined ? all : all.filter((record) => record.seq > previousCursor)
+    if (previousCursor !== undefined && suffix[0]?.seq !== previousCursor + 1) throw new Error('Session history prefix unavailable')
+    if (suffix.at(-1)?.seq !== cursor) throw new Error('Session history did not reach requested cursor')
+    return suffix
+  }
+  private isCurrent(port: number, generation: number): boolean { return this.port === port && this.generation === generation }
+  private schedule(ms: number): void {
+    if (this.port === null || this.timer !== null) return
+    this.timer = setTimeout(() => { this.timer = null; void this.pollNow() }, ms)
+  }
+  private emit(signal: BridgeSignal): void {
+    for (const listener of [...this.signalListeners]) {
+      try { listener(signal) } catch (error) { log.error('notification signal listener failed', { error: String(error) }) }
+    }
+  }
+  private setConnected(value: boolean): void {
+    if (this.connected === value) return
+    this.connected = value
+    for (const listener of [...this.connectedListeners]) listener(value)
   }
 }

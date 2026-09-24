@@ -75,22 +75,22 @@ Runtime locations (macOS notation; Windows uses `%APPDATA%`):
 Electron main (the shell's brain)
  ├─ runtime-supervisor ──spawn──▶ DSH child (node lib/bin.js web --port 0)
  │     └─ banner-parser → random port → host.describe probe
- ├─ notify-bridge ──ws──▶ /api/events.mux + /api/events.host (read-only, fail-soft)
+ ├─ notify-bridge ──HTTP──▶ /api/session/list + /api/session/page (read-only polling)
  ├─ version-manager ──npm install --prefix──▶ userData/versions/<ver>/ (tmp→manifest→rename)
  ├─ settings store (atomic JSON) ├─ tray / auto-launch
  └─ IPC (zod-validated minimal channel surface)
 Main window: local loading/error/setup page → after ready, loadURL = official DSH Web UI
-Manage window (separate): versions / settings / logs
+Manage window (separate): versions / settings / organization connection / logs / about
 ```
 
-**All upstream coupling is confined to 4 files** — if a DSH release changes behavior, this is where adaptation happens:
+**Upstream coupling is confined to the runtime adapters** — if a DSH release changes behavior, check these files:
 
 | File | Coupling |
 |---|---|
 | `src/main/dsh-runtime/banner-parser.ts` | stdout readiness line `dsh web: http://127.0.0.1:<port>` (3-tier fallback) |
 | `src/main/dsh-runtime/describe-probe.ts` | `POST /api/host.describe` envelope |
 | spawn contract in `src/main/main.ts` | launch command convention |
-| `src/main/notify-bridge/ws-frame-schemas.ts` | only 4 payload types are recognized (two-level loose zod; anything unknown is ignored and counted) |
+| `src/main/notify-bridge/session-schemas.ts` and `bridge.ts` | authenticated read-only Session RPCs and durable approval/turn events |
 
 ### Platform notes
 
