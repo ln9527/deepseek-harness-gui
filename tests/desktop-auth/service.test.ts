@@ -48,4 +48,21 @@ describe('desktop auth lifecycle', () => {
     expect(service.snapshot().status).toBe('disconnected')
     expect(store.clear).toHaveBeenCalledOnce()
   })
+
+  it('updates a running connection after browser revocation without restarting DSH', async () => {
+    const store = {
+      load: () => ({ token: 'private-device-token', user: { username: 'alice', role: 'member' } }),
+      save: vi.fn(), clear: vi.fn(() => true)
+    } as unknown as DesktopCredentialStore
+    const me = vi.fn()
+      .mockResolvedValueOnce({ username: 'alice', role: 'member' })
+      .mockRejectedValueOnce(new DesktopAuthError('DEVICE_TOKEN_INVALID', 'revoked'))
+    const client = { me } as unknown as DesktopAuthClient
+    const service = new DesktopAuthService({ client, store, deviceName: 'Windows device', openExternal: vi.fn(async () => {}), onState: vi.fn() })
+    await service.refresh()
+    expect(service.snapshot().status).toBe('connected')
+    await service.refresh()
+    expect(service.snapshot().status).toBe('disconnected')
+    expect(store.clear).toHaveBeenCalledOnce()
+  })
 })

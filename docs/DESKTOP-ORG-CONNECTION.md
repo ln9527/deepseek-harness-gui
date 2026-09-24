@@ -24,6 +24,7 @@ Gateway 契约（与 Gateway 实现分支对齐）：
 Native POST 加 `x-dsh-desktop-client: 1`、JSON Content-Type、同域 Origin，不带浏览器 cookie。Gateway 的 Bearer 只允许 `/auth/desktop/me` 和 `/auth/desktop/logout`，不可访问 `/org`、文件或 DSH 代理。这一切片证明「同一组织身份连接」，**尚未开放 Context 或成果同步**。后续共享应设计独立受限权限、明确选择和审计，不能把身份 token 当作全站 session。
 
 组织栈需显式设置 `GATEWAY_DESKTOP_AUTH_ENABLED=1`；未启用或旧 Gateway 的 404 会显示「组织连接尚未启用」。设备 token 14 天绝对过期；`/me` 返回 401 时桌面清除本机凭据并要求重新配对。管理窗还可在系统浏览器打开组织设备管理页。
+组织连接页进入、重新获得焦点时会重验身份；页面持续打开时每五分钟重验一次，避免网页撤销或到期后长期显示「已连接」。连续焦点事件在一分钟内合并。本地 DSH 的运行不依赖此网络检查。
 
 ## Windows 与验收
 

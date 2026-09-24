@@ -9,6 +9,8 @@ export function renderAccount(content: HTMLElement): () => void {
   const feedback = el('p', { class: 'status', role: 'status' })
   content.append(el('h2', {}, '组织连接'), el('p', { class: 'detail' }, '本地工作台可以离线使用。连接后这里只验证组织身份；文件或对话不会自动上传。'), body, feedback)
   let alive = true
+  let current: DesktopAuthState | null = null
+  let lastRefreshAt = 0
 
   const showError = (result: { ok: boolean; error?: { message: string } }): void => {
     feedback.textContent = resultError(result)
@@ -16,6 +18,7 @@ export function renderAccount(content: HTMLElement): () => void {
 
   const render = (state: DesktopAuthState): void => {
     if (!alive) return
+    current = state
     clear(body)
     switch (state.status) {
       case 'disconnected': {
@@ -80,7 +83,27 @@ export function renderAccount(content: HTMLElement): () => void {
     }
   }
 
-  void api.getDesktopAuth().then(render)
-  const unsubscribe = api.onDesktopAuthChanged(render)
-  return () => { alive = false; unsubscribe() }
+  // A device may be revoked or expire while the local DSH stays open. Check on
+  // account entry/focus and every five minutes while this tab is mounted.
+  const revalidate = (): void => {
+    if (!alive || (current?.status !== 'connected' && current?.status !== 'offline')) return
+    const now = Date.now()
+    if (now - lastRefreshAt < 60_000) return
+    lastRefreshAt = now
+    void api.refreshDesktopAuth().then(showError)
+  }
+  let receivedPush = false
+  const unsubscribe = api.onDesktopAuthChanged((state) => { receivedPush = true; render(state) })
+  void api.getDesktopAuth().then((state) => {
+    if (!receivedPush) render(state)
+    revalidate()
+  })
+  window.addEventListener('focus', revalidate)
+  const timer = window.setInterval(revalidate, 5 * 60_000)
+  return () => {
+    alive = false
+    unsubscribe()
+    window.removeEventListener('focus', revalidate)
+    window.clearInterval(timer)
+  }
 }
