@@ -57,7 +57,10 @@ export class DesktopAuthService {
         const saved = this.deps.store.save(withoutGrant)
         if (!saved) this.deps.store.clear()
         this.credential = { ...withoutGrant, saved }
-        this.publish({ status: 'connected', user: current.user, saved })
+        // Identity state contains no grant. Re-publishing an unchanged state
+        // remounts the account panel before it can show the reauthorization
+        // result, replacing that message with the generic no-grant hint.
+        if (saved !== current.saved) this.publish({ status: 'connected', user: current.user, saved })
         return { status: 'reauthorize' }
       }
       return { status: 'unavailable' }

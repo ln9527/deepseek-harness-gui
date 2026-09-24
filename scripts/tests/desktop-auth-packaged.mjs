@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -30,8 +30,11 @@ function createFixture() {
   const username = 'synthetic-ci-member'
   let pending = null
   let token = null
+  let projectCardsGrant = null
+  let projectCardsRevoked = false
   let revoked = false
   let meCalls = 0
+  let projectCardsCalls = 0
   let logoutCalls = 0
   const respond = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
@@ -70,6 +73,7 @@ function createFixture() {
           userCode: randomBytes(4).toString('hex').toUpperCase(),
           challenge: body.challenge,
           approved: false,
+          projectCards: false,
           claimed: false
         }
         respond(res, 200, {
@@ -93,8 +97,21 @@ function createFixture() {
         }
         pending.claimed = true
         token = randomBytes(32).toString('base64url')
+        projectCardsGrant = pending.projectCards ? randomBytes(32).toString('base64url') : null
+        projectCardsRevoked = false
         revoked = false
-        respond(res, 200, { status: 'approved', token, user: { username, role: 'member' } })
+        respond(res, 200, { status: 'approved', token, user: { username, role: 'member' },
+          ...(projectCardsGrant ? { projectCardsGrant } : {}) })
+        return
+      }
+      if (req.method === 'GET' && path === '/auth/desktop/project-cards') {
+        projectCardsCalls++
+        if (!projectCardsGrant || projectCardsRevoked || req.headers.authorization !== `Bearer ${projectCardsGrant}`) {
+          respond(res, 401, { code: 'DESKTOP_PROJECT_GRANT_INVALID' })
+          return
+        }
+        respond(res, 200, { projects: [{ projectId: 'synthetic-ci-project', title: 'Synthetic CI project',
+          owner: username, role: 'member', updatedAt: '2026-09-25T00:00:00.000Z' }] })
         return
       }
       if (req.method === 'GET' && path === '/auth/desktop/me') {
@@ -123,13 +140,17 @@ function createFixture() {
   })
   return {
     server,
-    approve: (code) => {
+    approve: (code, { projectCards = false } = {}) => {
       assert.ok(pending, 'start must precede approval')
       assert.equal(code, pending.userCode)
       pending.approved = true
+      pending.projectCards = projectCards
     },
+    revokeCards: () => { assert.ok(projectCardsGrant); projectCardsRevoked = true },
     revoke: () => { assert.ok(token); revoked = true },
     get meCalls() { return meCalls },
+    get projectCardsCalls() { return projectCardsCalls },
+    get secrets() { return [token, projectCardsGrant].filter(Boolean) },
     get logoutCalls() { return logoutCalls }
   }
 }
@@ -181,6 +202,24 @@ async function quitApp(app, window) {
   manage = null
 }
 
+async function assertNoCredentialExposure(main, window) {
+  const rendererValues = await Promise.all([main, window].map(page => page.evaluate(async () => ({
+    html: document.documentElement.outerHTML,
+    identity: await window.dshShell.getDesktopAuth(),
+    logs: await window.dshShell.getLogTail({ maxLines: 500 })
+  }))))
+  const cards = await window.evaluate(() => window.dshShell.getDesktopProjectCards())
+  const exposed = JSON.stringify([...rendererValues, cards])
+  const persisted = readFileSync(join(userDataDir, 'desktop-credential.bin')).toString('utf8')
+  const logFile = join(userDataDir, 'logs', 'main.log')
+  const logs = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  for (const secret of fixture.secrets) {
+    assert.ok(!exposed.includes(secret), 'desktop credential leaked through renderer or IPC')
+    assert.ok(!persisted.includes(secret), 'desktop credential persisted as plaintext')
+    assert.ok(!logs.includes(secret), 'desktop credential leaked through app log')
+  }
+}
+
 try {
   if (!executablePath || !existsSync(executablePath)) throw new Error('Test-only packaged Electron executable is missing')
   await new Promise((resolveListen, rejectListen) => {
@@ -188,23 +227,54 @@ try {
     fixture.server.listen(47621, '127.0.0.1', resolveListen)
   })
   let { app, window } = await openAppAndManage()
+  let main = await app.firstWindow()
+  const forbidden = await main.evaluate(() => window.dshShell.getDesktopProjectCards())
+  assert.equal(forbidden.ok, false)
+  assert.equal(forbidden.error.code, 'AUTH_IPC_FORBIDDEN')
   await window.getByText('未连接组织账号').waitFor()
   await window.getByRole('button', { name: '连接组织账号' }).click()
   const code = await window.locator('.device-code').innerText({ timeout: 20_000 })
-  fixture.approve(code)
+  fixture.approve(code, { projectCards: true })
   await window.getByText('已连接组织账号', { exact: true }).waitFor({ timeout: 20_000 })
   await window.getByText('账号：synthetic-ci-member').waitFor()
   await window.getByText(/凭据已由系统安全存储/).waitFor()
+  await window.getByText('Synthetic CI project').waitFor({ timeout: 20_000 })
+  assert.ok(fixture.projectCardsCalls >= 1, 'opted-in connection must read project cards with its separate grant')
+  await assertNoCredentialExposure(main, window)
   await window.screenshot({ path: join(evidenceDir, 'connected-unpacked.png') })
   assert.ok(existsSync(join(userDataDir, 'desktop-credential.bin')))
-  process.stdout.write('Packaged manage window: synthetic sign-in and encrypted save passed.\n')
+  process.stdout.write('Packaged manage window: opted-in project card, credential isolation and encrypted save passed.\n')
 
+  const readsBeforeRestart = fixture.projectCardsCalls
   await quitApp(app, window)
   ;({ app, window } = await openAppAndManage())
+  main = await app.firstWindow()
   await window.getByText('已连接组织账号', { exact: true }).waitFor({ timeout: 20_000 })
   await window.getByText('账号：synthetic-ci-member').waitFor()
+  await window.getByText('Synthetic CI project').waitFor({ timeout: 20_000 })
   assert.ok(fixture.meCalls >= 1, 'restart must revalidate with /me')
-  process.stdout.write('Packaged manage window: restart and /me passed.\n')
+  assert.ok(fixture.projectCardsCalls > readsBeforeRestart, 'restart must read project cards again')
+  await assertNoCredentialExposure(main, window)
+  process.stdout.write('Packaged manage window: restart, /me and fresh project-card read passed.\n')
+
+  fixture.revokeCards()
+  await window.locator('button[data-tab="versions"]').click()
+  await window.locator('button[data-tab="account"]').click()
+  await window.getByText(/项目卡授权已失效，列表已隐藏/).waitFor({ timeout: 20_000 })
+  assert.equal(await window.getByText('Synthetic CI project').count(), 0)
+  assert.ok(existsSync(join(userDataDir, 'desktop-credential.bin')), 'identity stays connected after card grant revocation')
+  process.stdout.write('Packaged manage window: revoked project grant hides the card without ending identity.\n')
+
+  const readsBeforeNoGrant = fixture.projectCardsCalls
+  await window.getByRole('button', { name: '断开并重新授权' }).click()
+  const noGrantCode = await window.locator('.device-code').innerText({ timeout: 20_000 })
+  fixture.approve(noGrantCode)
+  await window.getByText('已连接组织账号', { exact: true }).waitFor({ timeout: 20_000 })
+  await window.getByText(/这台设备还没有项目卡授权/).waitFor({ timeout: 20_000 })
+  assert.equal(await window.getByText('Synthetic CI project').count(), 0)
+  assert.equal(fixture.projectCardsCalls, readsBeforeNoGrant, 'no-grant pairing must not request project cards')
+  await assertNoCredentialExposure(main, window)
+  process.stdout.write('Packaged manage window: no-grant pairing hides cards without requesting project metadata.\n')
 
   fixture.revoke()
   await window.locator('button[data-tab="versions"]').click()
