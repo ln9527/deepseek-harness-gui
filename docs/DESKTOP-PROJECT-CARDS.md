@@ -15,7 +15,11 @@
 - Node 24：`pnpm typecheck`、定向 desktop-auth Vitest，以及以 Gateway `dd149b7` 的源码、临时 SQLite 和合成账号运行的跨仓 HTTP 联测。覆盖可选 grant、严格五字段、老加密凭据、主进程状态不泄漏、管理窗 IPC 与 DSH 窗口拒绝、当前 ACL 撤人、服务端撤销、离线与 in-flight 断开。
 - 本机 headless Google Chrome 预览构建后的管理页（760×600、390×700）：已见项目、空列表、身份离线隐藏、未授权和授权失效时的重连提示；恶意形状的项目名按文本渲染。[390px 截图](verification/2026-09-25-project-cards/chrome-narrow-synthetic.png)。这是浏览器注入合成 IPC 状态的 UI 验证。
 - Electron 43.4.0 本机实跑：临时 profile、真实构建后的 preload 和管理页，通过**独立临时主进程 harness 注册的合成 IPC**收到并显示项目卡；[Electron 截图](verification/2026-09-25-project-cards/electron-manage-synthetic.png)。此项验证了 Electron 窗口、preload 与渲染连接，**未运行产品 `main.ts`、完整 DSH、真实 Gateway 或 Windows 安装包**。
-- 发布前仍须运行 GUI 的 Windows CI 与真实 Windows x64 Test 安装包，连接启用该 Gateway 分支的合成 HTTPS 服务，走完整浏览器同意、关闭重启恢复、断网、撤权和改密。Gateway 的 Linux CI、精确生产 overlay 和小范围成员使用也需分别验收；本分支不修改生产配置。
+- [GUI #4 Windows CI run 36046039997](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046039997) 在提交 `8a92391` 上三项 job 全绿。测试版 `win-unpacked/DSH GUI Test.exe` 运行产品 `main.ts`、preload 和真实管理窗，连接固定 `127.0.0.1:47621` 的**合成协议夹具**；日志确认主动授予后显示五字段项目卡、退出重启后重新读取、仅撤销项目 grant 后卡隐藏但身份保留、无 grant 的新配对不请求项目元数据、身份撤权后清除本机凭据。脚本也检查 DSH 主窗口的项目卡 IPC 被拒绝，身份 token 与项目 grant 不出现在两个 renderer 的 HTML、所检查的身份/项目卡/日志 IPC 返回、应用日志或加密凭据文件的可读字节中。合成浏览器同意由夹具模拟，未操作真实 Gateway 网页。
+- Windows CI 的[项目卡截图归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046039997/artifacts/10828726515) SHA-256 为 `e907e589532b1316cdd8c55c107ff136672af8d9eaf1cd2c0a5c464a0fb113ce`；目视检查的 PNG SHA-256 为 `491126fa20fb2c016c1ed879688381bbdceee084fb0571157001c4a198e9cb99`，画面只有合成账号和项目，没有凭据。测试专用 NSIS [artifact](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046039997/artifacts/10829010898) 内 EXE SHA-256 为 `1bdd49da8e0be3f6b1472a5c8c346becd137d608376e9d54468879d77b997bea`，归档 SHA-256 为 `f57e5b13a0595b87fae407c3e0082131c8654134c5a2bc02e43122bd468df68f`。CI 未安装并运行该 NSIS；截图取自打包目录可执行文件。
+- 发布前仍须在真实 Windows x64 可见安装测试版，连接启用该 Gateway 分支的合成服务，走完整浏览器同意、关闭重启恢复、断网、撤权和改密，并可见卸载。Gateway 的 Linux CI、精确生产 overlay 和小范围成员使用也需分别验收；本分支不修改生产配置。
+
+![Windows CI 中仅含合成资料的已授权项目卡](verification/2026-09-25-project-cards/windows-unpacked-synthetic-36046039997.png)
 
 ## 交接回执
 
