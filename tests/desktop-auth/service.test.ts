@@ -109,11 +109,14 @@ describe('desktop auth lifecycle', () => {
     const client = { me: vi.fn(async () => ({ username: 'alice', role: 'member' })),
       projectCards: vi.fn(async () => { throw new DesktopAuthError('DESKTOP_PROJECT_GRANT_INVALID', 'revoked') })
     } as unknown as DesktopAuthClient
+    const onState = vi.fn()
     const service = new DesktopAuthService({ client, store, deviceName: 'Windows device',
-      openExternal: vi.fn(async () => {}), onState: vi.fn() })
+      openExternal: vi.fn(async () => {}), onState })
     expect(await service.projectCards()).toEqual({ status: 'offline' })
     await service.refresh()
+    const publishedBeforeGrantRevocation = onState.mock.calls.length
     expect(await service.projectCards()).toEqual({ status: 'reauthorize' })
+    expect(onState.mock.calls.length).toBe(publishedBeforeGrantRevocation)
     expect(save).toHaveBeenCalledWith({ token: 'private-identity-token',
       user: { username: 'alice', role: 'member' } })
     expect(service.snapshot().status).toBe('connected')
