@@ -3,8 +3,9 @@
  * supervisor / 通知桥 / 窗口 / 托盘 / IPC → before-quit 优雅关停。
  */
 
-import { app, dialog, Notification, shell } from 'electron'
+import { app, dialog, Notification, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
+import { hostname } from 'node:os'
 import type { DshRuntimeSnapshot, DshSpawnContract, Result } from '../shared/contracts'
 import { getLogger, initLogger } from './logger'
 import { resolveStoragePaths } from './util/paths'
@@ -25,7 +26,10 @@ import { DshNotifier } from './notify-bridge/notifier'
 import { MainWindowController } from './windows/main-window'
 import { ManageWindowController } from './windows/manage-window'
 import { TrayController } from './tray/tray'
-import { broadcastInstallProgress, broadcastSettings, broadcastSnapshot, registerIpc } from './ipc/register'
+import { broadcastDesktopAuth, broadcastInstallProgress, broadcastSettings, broadcastSnapshot, registerIpc } from './ipc/register'
+import { DesktopAuthClient } from './desktop-auth/client'
+import { DesktopCredentialStore } from './desktop-auth/credential-store'
+import { DesktopAuthService } from './desktop-auth/service'
 
 let focusMain: (() => void) | null = null
 
@@ -98,6 +102,14 @@ function bootstrap(): void {
 
     // ---- 设置 / 版本注册表 ----
     const settingsStore = new SettingsStore(paths.settingsPath)
+    const desktopAuth = new DesktopAuthService({
+      client: new DesktopAuthClient(),
+      store: new DesktopCredentialStore(join(paths.userDataDir, 'desktop-credential.bin'), safeStorage),
+      openExternal: (url) => shell.openExternal(url),
+      deviceName: `DSH GUI (${process.platform === 'win32' ? 'Windows' : 'macOS'}) · ${hostname().slice(0, 48)}`,
+      onState: broadcastDesktopAuth
+    })
+    void desktopAuth.refresh()
     const npmPath = findNpm(process.env.PATH ?? '')
     if (npmPath === null) {
       log.warn('npm not found on PATH —— 版本安装/升级不可用(内置/已安装版本仍可运行)')
@@ -314,6 +326,7 @@ function bootstrap(): void {
       mainWindow.setQuitting(true)
       manageWindow.setQuitting(true)
       bridge.detach()
+      desktopAuth.dispose()
       void (async () => {
         await supervisor.stop()
         supervisor.dispose()
@@ -343,6 +356,7 @@ function bootstrap(): void {
       npmRunner,
       versionsRoot: paths.versionsRoot,
       builtinRuntimeRoot: paths.builtinRuntimeRoot,
+      desktopAuth,
       actions: {
         quit: () => requestQuit(),
         openManage: () => manageWindow.open(),
@@ -350,6 +364,7 @@ function bootstrap(): void {
           void shell.openPath(app.getPath('logs'))
         },
         getActiveVersion: () => supervisor.snapshot().version,
+        isManageWebContents: (senderId) => manageWindow.ownsWebContents(senderId),
         selectVersion: (version: string): Result<null> => {
           settingsStore.update({ pinnedVersion: version })
           refreshTarget()

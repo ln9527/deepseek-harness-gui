@@ -33,7 +33,14 @@ const api: DshShellApi = {
   onSettingsChanged: (cb) => subscribe(IpcChannel.SettingsChanged, cb),
   openLogsFolder: () => ipcRenderer.invoke(IpcChannel.LogsOpenFolder),
   getLogTail: (req) => ipcRenderer.invoke(IpcChannel.LogsGetTail, req),
-  getEnvHint: () => ipcRenderer.invoke(IpcChannel.EnvHint)
+  getEnvHint: () => ipcRenderer.invoke(IpcChannel.EnvHint),
+  getDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthGet),
+  refreshDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthRefresh),
+  startDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthStart),
+  openDesktopVerification: () => ipcRenderer.invoke(IpcChannel.DesktopAuthOpen),
+  cancelDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthCancel),
+  disconnectDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthDisconnect),
+  onDesktopAuthChanged: (cb) => subscribe(IpcChannel.DesktopAuthChanged, cb)
 }
 
 contextBridge.exposeInMainWorld('dshShell', api)

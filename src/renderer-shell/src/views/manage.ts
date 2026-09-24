@@ -4,10 +4,11 @@ import type { DshVersionInfo, InstallProgress } from '../../../shared/ipc-types'
 import { DEEPSEEK_ENV_KEYS, type ShellSettings, type UpdateChannel } from '../../../shared/settings'
 import { getApi } from '../lib/api'
 import { button, clear, el } from '../lib/dom'
+import { renderAccount } from './account'
 
-type TabId = 'versions' | 'settings' | 'logs' | 'about'
+type TabId = 'versions' | 'settings' | 'account' | 'logs' | 'about'
 
-const VALID_TABS: readonly TabId[] = ['versions', 'settings', 'logs', 'about']
+const VALID_TABS: readonly TabId[] = ['versions', 'settings', 'account', 'logs', 'about']
 
 export function mountManage(container: HTMLElement, initialSub?: string): () => void {
   const api = getApi()
@@ -18,6 +19,7 @@ export function mountManage(container: HTMLElement, initialSub?: string): () => 
   const tabs: ReadonlyArray<{ readonly id: TabId; readonly label: string }> = [
     { id: 'versions', label: '版本' },
     { id: 'settings', label: '设置' },
+    { id: 'account', label: '组织连接' },
     { id: 'logs', label: '日志' },
     { id: 'about', label: '关于' }
   ]
@@ -39,6 +41,9 @@ export function mountManage(container: HTMLElement, initialSub?: string): () => 
         break
       case 'settings':
         tabCleanup = renderSettings(content)
+        break
+      case 'account':
+        tabCleanup = renderAccount(content)
         break
       case 'logs':
         tabCleanup = renderLogs(content)

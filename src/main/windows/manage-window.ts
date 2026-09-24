@@ -15,7 +15,7 @@ export interface ManageWindowDeps {
   readonly preloadPath: string
 }
 
-export type ManageTab = 'versions' | 'settings' | 'logs' | 'about'
+export type ManageTab = 'versions' | 'settings' | 'account' | 'logs' | 'about'
 
 export class ManageWindowController {
   private window: BrowserWindow | null = null
@@ -28,6 +28,10 @@ export class ManageWindowController {
     if (quitting && this.window) {
       this.window.close()
     }
+  }
+
+  ownsWebContents(senderId: number): boolean {
+    return this.window !== null && !this.window.isDestroyed() && this.window.webContents.id === senderId
   }
 
   /** 打开管理窗;可指定定位 tab(已开时重新路由到该 tab)。 */
@@ -52,6 +56,8 @@ export class ManageWindowController {
         nodeIntegration: false
       }
     })
+    this.window.webContents.on('will-navigate', (event) => event.preventDefault())
+    this.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     this.window.on('close', (event) => {
       if (!this.quitting) {
         event.preventDefault()
