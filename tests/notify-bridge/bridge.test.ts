@@ -7,16 +7,19 @@ const record = (seq: number, type: string, data: unknown): RecordValue => ({ seq
 
 function fakeRuntime(records: RecordValue[], running = true) {
   const calls: string[] = []
+  let visible = true
+  let updatedAt = 0
   const rpc: ReadonlyRpc = async (_port, cookie, endpoint, args) => {
     expect(cookie).toBe('auth=cookie')
     calls.push(endpoint)
-    if (endpoint === 'session/list') return { items: [{ sessionId: 's1', running, projections: { asOfSeq: records.at(-1)?.seq ?? -1, values: {} } }] }
+    if (endpoint === 'session/list') return { items: visible ? [{ sessionId: 's1', updatedAt, running, projections: { asOfSeq: records.at(-1)?.seq ?? -1, values: {} } }] : [] }
     const request = args.request as { throughSeq: number; beforeSeq?: number }
     const end = Math.min(request.throughSeq + 1, request.beforeSeq ?? request.throughSeq + 1)
     const start = Math.max(0, end - 2)
     return { records: records.slice(start, end).map((event) => ({ type: 'event', event })), hasMore: start > 0 }
   }
-  return { rpc, calls, setRunning: (value: boolean) => { running = value } }
+  return { rpc, calls, setRunning: (value: boolean) => { running = value },
+    setVisible: (value: boolean) => { visible = value }, setUpdatedAt: (value: number) => { updatedAt = value } }
 }
 
 describe('read-only notification polling', () => {
@@ -92,6 +95,82 @@ describe('read-only notification polling', () => {
     bridge.detach()
   })
 
+  it('reports a new Session completed between polls once, without replaying old completed history', async () => {
+    const records: RecordValue[] = []
+    const runtime = fakeRuntime(records, false)
+    runtime.setVisible(false)
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: runtime.rpc,
+      pollIntervalMs: 60_000, now: () => 1000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
+    bridge.attach(4321)
+    await bridge.pollNow()
+    records.push(
+      { ...record(0, 'turn/start', { turn: 1 }), time: 1100 },
+      { ...record(1, 'user/message', {}), time: 1101 },
+      { ...record(2, 'turn/end', { turn: 1, reason: { kind: 'completed' } }), time: 1200 }
+    )
+    runtime.setUpdatedAt(1101)
+    runtime.setVisible(true)
+    await bridge.pollNow()
+    await bridge.pollNow()
+    expect(signals).toEqual([{ kind: 'turn-ended', sessionId: 's1', reason: 'completed', errorMessage: null }])
+    bridge.detach()
+
+    const historical = fakeRuntime(records, false)
+    historical.setUpdatedAt(1101)
+    const restarted = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: historical.rpc,
+      pollIntervalMs: 60_000, now: () => 1300 })
+    const replayed: BridgeSignal[] = []
+    restarted.onSignal((signal) => { replayed.push(signal) })
+    restarted.attach(4321)
+    await restarted.pollNow()
+    expect(replayed).toEqual([])
+    expect(historical.calls).toEqual(['session/list'])
+    restarted.detach()
+  })
+
+  it('uses the turn-end event time when a recent list row contains an older completion', async () => {
+    const records = [
+      { ...record(0, 'turn/start', { turn: 1 }), time: 500 },
+      { ...record(1, 'turn/end', { turn: 1, reason: { kind: 'completed' } }), time: 600 },
+      { ...record(2, 'user/message', {}), time: 1200 }
+    ]
+    const runtime = fakeRuntime(records, false)
+    runtime.setUpdatedAt(1200)
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: runtime.rpc,
+      pollIntervalMs: 60_000, now: () => 1000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
+    bridge.attach(4321)
+    await bridge.pollNow()
+    expect(runtime.calls).toContain('session/page')
+    expect(signals).toEqual([])
+    bridge.detach()
+  })
+
+  it('delivers an older completed turn before a later pending approval in one suffix', async () => {
+    const records = [record(0, 'turn/start', { turn: 1 })]
+    const runtime = fakeRuntime(records)
+    const bridge = new NotifyBridge({ cookieProvider: async () => 'auth=cookie', rpc: runtime.rpc,
+      pollIntervalMs: 60_000 })
+    const signals: BridgeSignal[] = []
+    bridge.onSignal((signal) => { signals.push(signal) })
+    bridge.attach(4321)
+    await bridge.pollNow()
+    records.push(
+      record(1, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      record(2, 'turn/start', { turn: 2 }),
+      record(3, 'approval/asked', { id: 'a2', toolName: 'bash' })
+    )
+    await bridge.pollNow()
+    expect(signals).toEqual([
+      { kind: 'turn-ended', sessionId: 's1', reason: 'completed', errorMessage: null },
+      { kind: 'approval-requested', sessionId: 's1', approvalId: 'a2', toolName: 'bash', reason: null }
+    ])
+    bridge.detach()
+  })
+
   it('does not let an old generation emit after port replacement', async () => {
     let release: ((value: unknown) => void) | undefined
     const deferred = new Promise<unknown>((resolve) => { release = resolve })
@@ -101,7 +180,7 @@ describe('read-only notification polling', () => {
     const oldPoll = bridge.pollNow()
     bridge.attach(4322)
     await bridge.pollNow()
-    release?.({ items: [{ sessionId: 'stale', running: false, projections: { asOfSeq: -1 } }] })
+    release?.({ items: [{ sessionId: 'stale', updatedAt: 0, running: false, projections: { asOfSeq: -1 } }] })
     await oldPoll
     expect(bridge.isConnected()).toBe(true)
     bridge.detach()

@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 const summarySchema = z.object({
   sessionId: z.string().min(1),
+  updatedAt: z.number(),
   running: z.boolean(),
   origin: z.string().optional(),
   projections: z.object({ asOfSeq: z.number().int().min(-1) }).optional()

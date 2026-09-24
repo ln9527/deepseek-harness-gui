@@ -8,7 +8,7 @@ export interface JournalState {
 }
 
 /** Initial scan only restores approvals still in the current open turn. */
-export function initializeJournal(sessionId: string, cursor: number, records: readonly SessionRecord[], running: boolean): {
+export function initializeJournal(sessionId: string, cursor: number, records: readonly SessionRecord[], running: boolean, completedAfterMs?: number): {
   readonly state: JournalState
   readonly signals: readonly BridgeSignal[]
 } {
@@ -25,11 +25,21 @@ export function initializeJournal(sessionId: string, cursor: number, records: re
       if (event.kind === 'approval-decided') pending.delete(event.id)
     }
   }
+  const latestBoundary = records[boundary]
+  const recentEnd = !running && latestBoundary?.type === 'turn/end' &&
+    completedAfterMs !== undefined && latestBoundary.time > completedAfterMs
+    ? parseNotifyEvent(latestBoundary)
+    : null
   return {
     state: { cursor, pending, turnOpen: open },
-    signals: [...pending].map(([approvalId, approval]) => ({
-      kind: 'approval-requested', sessionId, approvalId, toolName: approval.toolName, reason: approval.reason
-    }))
+    signals: [
+      ...[...pending].map(([approvalId, approval]): BridgeSignal => ({
+        kind: 'approval-requested', sessionId, approvalId, toolName: approval.toolName, reason: approval.reason
+      })),
+      ...(recentEnd?.kind === 'turn-ended' ? [{
+        kind: 'turn-ended' as const, sessionId, reason: recentEnd.reason, errorMessage: recentEnd.errorMessage
+      }] : [])
+    ]
   }
 }
 
@@ -78,5 +88,6 @@ export function advanceJournal(sessionId: string, previous: JournalState, cursor
       kind: 'approval-requested', sessionId, approvalId, toolName: approval.toolName, reason: approval.reason
     })
   }
-  return { state: { cursor, pending, turnOpen }, signals: [...signals, ...endings] }
+  return { state: { cursor, pending, turnOpen }, signals: [...signals.filter((signal) => signal.kind === 'approval-resolved'), ...endings,
+    ...signals.filter((signal) => signal.kind === 'approval-requested')] }
 }

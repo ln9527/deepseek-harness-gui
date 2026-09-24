@@ -15,6 +15,7 @@ export interface BridgeOptions {
   readonly cookieProvider: (port: number) => Promise<string | null>
   readonly rpc?: ReadonlyRpc
   readonly pollIntervalMs?: number
+  readonly now?: () => number
 }
 
 /** BrowserAuth hashes the exact Host authority into its HttpOnly cookie name. */
@@ -53,6 +54,7 @@ export class NotifyBridge {
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<void> | null = null
   private connected = false
+  private attachedAtMs: number | null = null
   private readonly journals = new Map<string, JournalState>()
   private readonly degradedSessions = new Set<string>()
   private readonly signalListeners = new Set<SignalListener>()
@@ -63,6 +65,7 @@ export class NotifyBridge {
     if (this.port === port) return
     this.detach()
     this.port = port
+    this.attachedAtMs = this.options.now?.() ?? Date.now()
     this.controller = new AbortController()
     this.schedule(0)
   }
@@ -73,6 +76,7 @@ export class NotifyBridge {
     this.controller?.abort()
     this.controller = null
     this.port = null
+    this.attachedAtMs = null
     this.inFlight = null
     this.journals.clear()
     this.degradedSessions.clear()
@@ -134,12 +138,17 @@ export class NotifyBridge {
       }
       if (previous && cursor < previous.cursor) { this.journals.delete(summary.sessionId); continue }
       try {
-        const records = cursor < 0 || (previous === undefined && !summary.running)
+        // A new or newly prompted Session can finish between two list polls.
+        // Inspect its last turn only when list metadata proves activity after attach;
+        // the event timestamp below prevents replaying older completed turns.
+        const recentFinished = previous === undefined && !summary.running &&
+          this.attachedAtMs !== null && summary.updatedAt > this.attachedAtMs
+        const records = cursor < 0 || (previous === undefined && !summary.running && !recentFinished)
           ? []
           : await this.readPages(rpc, port, cookie, summary.sessionId, cursor, previous?.cursor, signal)
         if (!this.isCurrent(port, generation)) return
         const result = previous === undefined
-          ? initializeJournal(summary.sessionId, cursor, records, summary.running)
+          ? initializeJournal(summary.sessionId, cursor, records, summary.running, recentFinished ? this.attachedAtMs! : undefined)
           : advanceJournal(summary.sessionId, previous, cursor, records, summary.running)
         this.journals.set(summary.sessionId, result.state)
         this.degradedSessions.delete(summary.sessionId)

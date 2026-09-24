@@ -5,7 +5,7 @@ const event = (type: string, data: unknown) => ({ type, seq: 1, time: 100, data 
 
 describe('bundled DSH 0.1.5-rc.2 durable Session contract', () => {
   it('accepts list and page wire shapes', () => {
-    expect(parseSessionList({ items: [{ sessionId: 's1', running: true, projections: { asOfSeq: 3, values: {} } }] })[0]?.projections?.asOfSeq).toBe(3)
+    expect(parseSessionList({ items: [{ sessionId: 's1', updatedAt: 1000, running: true, projections: { asOfSeq: 3, values: {} } }] })[0]?.projections?.asOfSeq).toBe(3)
     expect(parseSessionPage({ records: [{ type: 'event', event: event('turn/start', { turn: 1 }) }], hasMore: false }).records).toHaveLength(1)
   })
   it('uses durable approval IDs and the turn end reason', () => {

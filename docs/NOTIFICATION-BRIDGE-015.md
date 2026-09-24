@@ -16,15 +16,22 @@ Session's projection cursor to page its event log. Pages are read backwards
 until the previous cursor, then processed in sequence. The first scan of a
 running Session pages back to the most recent turn boundary and only reports
 `approval/asked` events in an open turn without a matching
-`approval/decided`. It does not replay historical `turn/end` notifications.
+`approval/decided`. A first-seen completed Session is inspected only when its
+list activity is newer than bridge attachment; the most recent `turn/end` is
+reported only when that event itself is newer than attachment. Earlier history
+is not replayed, including after a runtime restart.
 Subsequent scans resolve pending approvals by durable approval ID and notify
 turn endings by `turn/end.reason.kind`: only `completed` is called complete;
 `aborted`, `blocked`, `error`, `max-tokens`, and `interrupted` have separate
 wording. Unknown extension reasons use the neutral “本轮已结束”.
 
-Limits: this is a polling path, so notices may lag by up to the polling
-interval. Sessions without an available projection cursor are skipped until a
-later poll. Subagent history requires an address with parent and mode and is
+Limits: live attached Sessions normally surface at the next two-second poll,
+plus RPC processing time. Cold list projection hints may lag the event log or
+be absent; `session/page` requires an explicit `throughSeq`, so the shell cannot
+safely infer a newer cursor. A fast completed Session with a stale or missing
+cold cursor can still be missed. A turn already in progress before bridge
+attachment is treated as historical if its list activity predates attachment.
+Subagent history requires an address with parent and mode and is
 currently skipped. Non-durable `api-session/error` emissions, including some
 activation failures before a turn opens, are outside this read-only route.
 `session/follow` is not used because following a prepared ordinary Session can
