@@ -172,7 +172,9 @@ async function openAppAndManage() {
 async function quitApp(app, window) {
   const process = app.process()
   const exited = once(process, 'exit')
-  await window.evaluate(() => { void window.dshShell.quitApp() })
+  // Electron can close the page before Playwright receives evaluate's reply.
+  // The process exit, rather than that reply, is the quit assertion.
+  void window.evaluate(() => { void window.dshShell.quitApp() }).catch(() => {})
   await Promise.race([
     exited,
     new Promise((_, reject) => setTimeout(() => reject(new Error('Packaged app did not exit cleanly')), 25_000))
