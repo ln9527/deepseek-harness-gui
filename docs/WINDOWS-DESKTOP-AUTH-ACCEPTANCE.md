@@ -7,6 +7,25 @@
 测试安装包产物是 `dist-win-test/DSH-GUI-Test-Setup-0.2.1-x64.exe`，
 不得作为公开 Release 发布。
 
+## CI 候选与证据（2026-09-25）
+
+[CI run 36036192943](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36036192943)
+在提交 `507ecb62a40cca2c5c5e9467a6dfc014810b3ec9` 上完成：macOS
+测试、标准 Windows 测试与安装包、测试专用 Windows 安装包三个 job 均通过。
+标准 Windows job 的 Vitest 为 114 通过、1 跳过，原生 GLM 测试 8/8
+通过，且生成并上传了标准 NSIS 安装包。
+
+本次 Windows 人工验收请取该 run 的
+[DSH-GUI-Test-Setup-win-x64-TEST-ONLY artifact](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36036192943/artifacts/10825232065)
+（14 天保留）。其中 EXE 文件名为
+`DSH-GUI-Test-Setup-0.2.1-x64.exe`，Windows runner 用 `Get-FileHash`
+记录的 EXE SHA-256 为
+`c7bfc5951933f8d5ef0fb7dea6dc43d298aeb376ca0a2c0738416e0a57587b24`。
+GitHub 上传归档的 SHA-256 为
+`630e8906a4c5375755cddd6bb08f801aeec34652b8e3560afac20c8dcd3000b1`。
+这个候选只证明 Windows CI 构建和自动测试通过；尚未在 Windows
+桌面上完成以下浏览器批准、重启、撤销、拒绝、过期与离线交互验收。
+
 ## 在测试 Windows x64 机器准备
 
 需要 Node.js 24、pnpm 10、此 GUI 仓库和含桌面设备认证的 Gateway 仓库。
