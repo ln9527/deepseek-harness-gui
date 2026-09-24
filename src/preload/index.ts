@@ -41,6 +41,7 @@ const api: DshShellApi = {
   openDesktopDeviceManagement: () => ipcRenderer.invoke(IpcChannel.DesktopAuthManage),
   cancelDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthCancel),
   disconnectDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthDisconnect),
+  getDesktopProjectCards: () => ipcRenderer.invoke(IpcChannel.DesktopProjectCardsGet),
   onDesktopAuthChanged: (cb) => subscribe(IpcChannel.DesktopAuthChanged, cb)
 }
 

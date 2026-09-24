@@ -1,4 +1,4 @@
-import type { DesktopAuthState, DesktopIdentity } from '../../shared/desktop-auth'
+import type { DesktopAuthState, DesktopIdentity, DesktopProjectCardsState } from '../../shared/desktop-auth'
 import type { Result } from '../../shared/contracts'
 import { err, ok } from '../util/result'
 import { DesktopAuthClient, DesktopAuthError, type PendingDesktopFlow } from './client'
@@ -17,7 +17,8 @@ export interface DesktopAuthServiceDeps {
 
 export class DesktopAuthService {
   private state: DesktopAuthState = { status: 'disconnected' }
-  private credential: { readonly token: string; readonly user: DesktopIdentity; readonly saved: boolean } | null = null
+  private credential: { readonly token: string; readonly user: DesktopIdentity; readonly saved: boolean;
+    readonly projectCardsGrant?: string } | null = null
   private flow: PendingDesktopFlow | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private starting = false
@@ -37,6 +38,31 @@ export class DesktopAuthService {
   }
 
   snapshot(): DesktopAuthState { return this.state }
+
+  /** Never cache cards: every visible list is authorized by a fresh Gateway read. */
+  async projectCards(): Promise<DesktopProjectCardsState> {
+    const current = this.credential
+    if (!current || this.state.status !== 'connected') return { status: 'offline' }
+    if (!current.projectCardsGrant) return { status: 'no-grant' }
+    try {
+      const projects = await this.deps.client.projectCards(current.projectCardsGrant)
+      return this.credential === current && this.state.status === 'connected'
+        ? { status: 'ready', projects } : { status: 'offline' }
+    } catch (error) {
+      if (this.credential !== current || this.state.status !== 'connected') return { status: 'offline' }
+      if (error instanceof DesktopAuthError && error.code === 'DESKTOP_PROJECT_GRANT_INVALID') {
+        // The identity connection may still be valid. Remove only its optional
+        // project authority from memory and encrypted persistence.
+        const withoutGrant = { token: current.token, user: current.user }
+        const saved = this.deps.store.save(withoutGrant)
+        if (!saved) this.deps.store.clear()
+        this.credential = { ...withoutGrant, saved }
+        this.publish({ status: 'connected', user: current.user, saved })
+        return { status: 'reauthorize' }
+      }
+      return { status: 'unavailable' }
+    }
+  }
 
   async refresh(): Promise<void> {
     const current = this.credential
@@ -147,8 +173,10 @@ export class DesktopAuthService {
         return
       }
       this.stopPolling()
-      const saved = this.deps.store.save({ token: outcome.token, user: outcome.user })
-      this.credential = { token: outcome.token, user: outcome.user, saved }
+      const credential = { token: outcome.token, user: outcome.user,
+        ...(outcome.projectCardsGrant ? { projectCardsGrant: outcome.projectCardsGrant } : {}) }
+      const saved = this.deps.store.save(credential)
+      this.credential = { ...credential, saved }
       this.publish({ status: 'connected', user: outcome.user, saved })
     } catch (error) {
       if (flow !== this.flow) return

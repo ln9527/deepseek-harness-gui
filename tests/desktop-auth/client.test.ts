@@ -42,6 +42,30 @@ describe('desktop device auth wire', () => {
     expect(requests[0]!.headers).toMatchObject({ Authorization: 'Bearer secret-token' })
   })
 
+  it('parses the optional grant and reads only the five project card fields with that Bearer', async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = []
+    const grant = 'g'.repeat(43)
+    const fetcher = vi.fn(async (url: URL, init: RequestInit) => {
+      requests.push({ url: url.toString(), init })
+      if (url.pathname.endsWith('/poll')) return Response.json({ status: 'approved', token: 'private-identity-token',
+        projectCardsGrant: grant, user: { username: 'alice', role: 'member' } })
+      return Response.json({ projects: [{ projectId: 'proj_1', title: 'A', owner: 'alice',
+        role: 'owner', updatedAt: '2026-09-25T00:00:00.000Z' }] })
+    }) as unknown as typeof fetch
+    const client = new DesktopAuthClient('https://ds.ainativeorg.net', fetcher)
+    const approved = await client.poll({ requestId: 'r', verifier: 'v', userCode: 'CODE',
+      verificationUrl: 'https://ds.ainativeorg.net/auth/desktop/verify', expiresAt: 12345, pollIntervalSeconds: 5 })
+    expect(approved).toMatchObject({ status: 'approved', projectCardsGrant: grant })
+    expect((await client.projectCards(grant))[0]?.title).toBe('A')
+    expect(requests[1]?.url).toBe('https://ds.ainativeorg.net/auth/desktop/project-cards')
+    expect(requests[1]?.init.headers).toMatchObject({ Authorization: `Bearer ${grant}` })
+    expect(requests[1]?.init).not.toHaveProperty('credentials')
+
+    const oversharing = vi.fn(async () => Response.json({ projects: [{ projectId: 'proj_1',
+      title: 'A', owner: 'alice', role: 'owner', updatedAt: '2026-09-25T00:00:00.000Z', collaborators: ['bob'] }] })) as unknown as typeof fetch
+    await expect(new DesktopAuthClient('https://ds.ainativeorg.net', oversharing).projectCards(grant)).rejects.toThrow()
+  })
+
   it('explains an unopened gateway and accepts local HTTP only for loopback tests', async () => {
     const fetcher = vi.fn(async () => Response.json({ code: 'NOT_FOUND' }, { status: 404 })) as unknown as typeof fetch
     const client = new DesktopAuthClient('http://127.0.0.1:9999', fetcher)

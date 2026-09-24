@@ -18,13 +18,17 @@ describe('desktop credential persistence', () => {
       decryptString: (value) => value.reverse().toString('utf8')
     }
     const store = new DesktopCredentialStore(path, cipher, 'https://ds.ainativeorg.net')
-    expect(store.save({ token: 'private-device-token-123', user: { username: 'alice', role: 'member' } })).toBe(true)
+    const grant = `${'g'.repeat(42)}h`
+    expect(store.save({ token: 'private-device-token-123', projectCardsGrant: grant,
+      user: { username: 'alice', role: 'member' } })).toBe(true)
     expect(readFileSync(path, 'utf8')).not.toContain('private-device-token-123')
+    expect(readFileSync(path, 'utf8')).not.toContain(grant)
     expect(store.load()?.user.username).toBe('alice')
     // A bundle pointed at another Gateway must never refresh with this Bearer.
     const otherOrigin = new DesktopCredentialStore(path, cipher, 'http://127.0.0.1:47621')
     expect(otherOrigin.load()).toBeNull()
     expect(store.load()?.token).toBe('private-device-token-123')
+    expect(store.load()?.projectCardsGrant).toBe(grant)
     store.clear()
     expect(store.load()).toBeNull()
   })
@@ -54,5 +58,21 @@ describe('desktop credential persistence', () => {
       token: 'legacy-private-device-token', user: { username: 'alice', role: 'member' }
     })))
     expect(new DesktopCredentialStore(path, cipher, 'https://ds.ainativeorg.net').load()).toBeNull()
+  })
+
+  it('opens an older origin-bound identity credential without adding project authority', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-desktop-auth-'))
+    dirs.push(dir)
+    const path = join(dir, 'credential.bin')
+    const cipher: CredentialCipher = {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(value).reverse(),
+      decryptString: (value) => value.reverse().toString('utf8')
+    }
+    writeFileSync(path, cipher.encryptString(JSON.stringify({ origin: 'https://ds.ainativeorg.net',
+      token: 'old-identity-token-123', user: { username: 'alice', role: 'member' } })))
+    expect(new DesktopCredentialStore(path, cipher, 'https://ds.ainativeorg.net').load()).toEqual({
+      token: 'old-identity-token-123', user: { username: 'alice', role: 'member' }
+    })
   })
 })

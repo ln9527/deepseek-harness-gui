@@ -1,5 +1,7 @@
 # 桌面版组织连接：首个可实施切片
 
+本文记录首期身份连接。独立的可选项目卡原型及其额外授权见 [DESKTOP-PROJECT-CARDS.md](DESKTOP-PROJECT-CARDS.md)；下文的“仅身份”描述适用于未勾选项目卡的设备。
+
 状态：`codex/desktop-org-login-20260925` 开发分支，未合入 `main`，未发布安装包。仓库 `package.json` 当前写 `0.2.1`；截至 2026-09-25，公开 Windows Releases 的最新安装包仍为 v0.1.2。代码、CI 构建和可下载安装包是三种不同证据。
 
 标准包始终固定生产 HTTPS Gateway。为真实 Windows 登录验收，另有仅供合成账号的 `DSH GUI Test` 构建：Gateway loopback 地址在构建时编译进主进程，安装名、appId 和用户数据均隔离；操作步骤见 [Windows 测试安装包验收](WINDOWS-DESKTOP-AUTH-ACCEPTANCE.md)。设备凭据也绑定 Gateway origin，跨包或旧格式凭据不会用于启动重验。

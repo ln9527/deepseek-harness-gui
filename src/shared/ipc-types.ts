@@ -5,7 +5,7 @@
 
 import type { DshRuntimeSnapshot, Result } from './contracts'
 import type { ShellSettings, ShellSettingsPatch } from './settings'
-import type { DesktopAuthState } from './desktop-auth'
+import type { DesktopAuthState, DesktopProjectCardsState } from './desktop-auth'
 
 export const IpcChannel = {
   // renderer → main (invoke)
@@ -31,6 +31,7 @@ export const IpcChannel = {
   DesktopAuthManage: 'desktop-auth:manage',
   DesktopAuthCancel: 'desktop-auth:cancel',
   DesktopAuthDisconnect: 'desktop-auth:disconnect',
+  DesktopProjectCardsGet: 'desktop-project-cards:get',
   // main → renderer (push)
   StateChanged: 'state:changed',
   InstallProgress: 'install:progress',
@@ -99,5 +100,6 @@ export interface DshShellApi {
   openDesktopDeviceManagement(): Promise<Result<null>>
   cancelDesktopAuth(): Promise<Result<null>>
   disconnectDesktopAuth(): Promise<Result<null>>
+  getDesktopProjectCards(): Promise<DesktopProjectCardsState>
   onDesktopAuthChanged(cb: (state: DesktopAuthState) => void): () => void
 }

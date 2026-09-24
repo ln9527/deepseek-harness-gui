@@ -2,11 +2,14 @@ import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 
 import { z } from 'zod'
 import type { DesktopIdentity } from '../../shared/desktop-auth'
 
-const credentialSchema = z.object({ origin: z.string().url(), token: z.string().min(20), user: z.object({ username: z.string().min(1), role: z.string().min(1) }) })
+const credentialSchema = z.object({ origin: z.string().url(), token: z.string().min(20),
+  projectCardsGrant: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
+  user: z.object({ username: z.string().min(1), role: z.string().min(1) }) })
 
 export interface StoredDesktopCredential {
   readonly token: string
   readonly user: DesktopIdentity
+  readonly projectCardsGrant?: string
 }
 
 export interface CredentialCipher {
@@ -25,7 +28,8 @@ export class DesktopCredentialStore {
       const plain = this.cipher.decryptString(readFileSync(this.path))
       const credential = credentialSchema.parse(JSON.parse(plain))
       if (credential.origin !== this.origin) return null
-      return { token: credential.token, user: credential.user }
+      return { token: credential.token, user: credential.user,
+        ...(credential.projectCardsGrant ? { projectCardsGrant: credential.projectCardsGrant } : {}) }
     } catch {
       // A corrupt or account-inaccessible ciphertext must never be treated as a login.
       return null
