@@ -28,20 +28,26 @@ GitHub 上传归档的 SHA-256 为
 
 ## 打包界面的自动检查
 
-后续 CI 的测试专用 Windows job 会在同一台临时 Windows runner 上启动
-`dist-win-test/win-unpacked/DSH GUI Test.exe` 和固定端口 47621 的本机
-协议夹具。Playwright 通过 Electron 调试接口打开真实管理窗、点击连接、
+测试专用 Windows job 在临时 runner 上分别启动打包目录的
+`win-unpacked/DSH GUI Test.exe`，以及把同一测试版 NSIS 以 `/S`
+静默安装到 `%TEMP%` 后的 `DSH GUI Test.exe`。两次都连接固定端口
+47621 的本机协议夹具。Playwright 通过 Electron 调试接口打开真实管理窗、点击连接、
 读取连接码；夹具用该码批准合成账号。随后检查已连接界面、系统加密
 凭据保存、退出并重启后的 `/me` 重验，以及模拟组织撤销后重入账号页
-清除本地凭据。所有应用数据与 DSH_HOME 均在临时目录，测试结束清理。
-成功时保存不含 token 的已连接界面截图。
+清除本地凭据。测试版的应用数据与 DSH_HOME 均在临时目录；NSIS
+安装路径也固定到临时目录，测试结束运行静默卸载并清理。成功时分别
+保存不含 token 的已连接界面截图。
 
-此检查使用打包应用的 `win-unpacked` 可执行文件，不执行 NSIS 安装流程；
-浏览器批准动作由夹具模拟，并未操作真实 Gateway 网页。真实 Gateway
+静默安装只验证安装后的可执行文件及同一管理窗流程，不覆盖有人参与的
+安装页面、快捷方式或卸载界面。浏览器批准动作由夹具模拟，并未操作真实 Gateway 网页。真实 Gateway
 的 HTTP 协议由跨仓 `gateway-contract.test.ts` 单独检查（有 Gateway 源码时
 运行）。CI 的桌面检查通过后，仍需按下文用该 run 的 NSIS 安装包在
-Windows 桌面完成真实浏览器批准、拒绝、过期、离线与安装/卸载验收。
-这条新 CI 检查在首次 Windows runner 成功执行前只能算待验证测试。
+Windows 桌面完成真实浏览器批准、拒绝、过期、离线与可见安装/卸载验收。
+[首次 Windows 探针 run 36038815617](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36038815617)
+中，未安装版的连接、保存、重启和撤销断言都通过，job 最后因测试夹具
+把 Edge 的缓存放进临时目录，Windows 文件锁阻止目录清理而失败。
+夹具现在只重定向本应用的数据与 DSH_HOME，等待新的 Windows CI 复验；
+静默安装版也尚待首次 CI 执行。
 
 ## 在测试 Windows x64 机器准备
 

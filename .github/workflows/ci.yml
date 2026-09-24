@@ -87,7 +87,10 @@ jobs:
           path: dist-win-test/DSH-GUI-Test-Setup-*.exe
           retention-days: 14
       - name: Exercise packaged management-window sign-in on Windows
-        run: node scripts/tests/desktop-auth-packaged.mjs
+        run: node scripts/tests/desktop-auth-packaged.mjs --unpacked
+        timeout-minutes: 5
+      - name: Exercise silent-installed test NSIS on Windows
+        run: node scripts/tests/desktop-auth-packaged.mjs --nsis
         timeout-minutes: 5
       - name: Upload synthetic UI evidence
         if: always()
