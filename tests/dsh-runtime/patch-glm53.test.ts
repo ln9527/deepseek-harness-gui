@@ -1,13 +1,14 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  applyToTree,
-  buildGlm53Entry,
-  patchCatalog,
-  PROVIDER_DATA_RELATIVE,
-} from '../../scripts/patch-glm53.mjs'
+
+// Native file-URL import keeps Vite's Windows path transformer away from this
+// plain Node CLI module. The suite still exercises its real exported functions.
+const modulePath = pathToFileURL(join(process.cwd(), 'scripts', 'patch-glm53.mjs')).href
+const catalogModule = (await import(/* @vite-ignore */ modulePath)) as typeof import('../../scripts/patch-glm53.mjs')
+const { applyToTree, buildGlm53Entry, patchCatalog, PROVIDER_DATA_RELATIVE } = catalogModule
 
 const tmpDirs: string[] = []
 

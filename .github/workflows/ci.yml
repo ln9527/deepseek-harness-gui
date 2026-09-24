@@ -41,6 +41,8 @@ jobs:
       - run: pnpm typecheck
       - name: Materialize win32 runtime
         run: node scripts/fetch-builtin-runtime.mjs --platform win32
+      - name: Check native GLM catalog module import
+        run: node --check scripts/patch-glm53.mjs && node -e "import('./scripts/patch-glm53.mjs').then(m => { if (typeof m.patchCatalog !== 'function') process.exit(1) })"
       - run: pnpm test
         env:
           # 在真 Windows 上用打包的真实 node.exe 拉起 win32-x64 DSH 树,
