@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
-import type { DesktopIdentity } from '../../shared/desktop-auth'
+import type { DesktopIdentity, DesktopProjectCard } from '../../shared/desktop-auth'
 const identitySchema = z.object({ username: z.string().min(1), role: z.string().min(1) })
 const startSchema = z.object({
   requestId: z.string().min(1),
@@ -11,10 +11,16 @@ const startSchema = z.object({
 })
 const pollSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pending'), pollIntervalSeconds: z.number().int().min(1).max(60) }),
-  z.object({ status: z.literal('approved'), token: z.string().min(20), user: identitySchema })
+  z.object({ status: z.literal('approved'), token: z.string().min(20), user: identitySchema,
+    projectCardsGrant: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional() })
 ])
 const meSchema = z.object({ user: identitySchema })
 const errorSchema = z.object({ code: z.string() })
+const projectCardSchema = z.strictObject({
+  projectId: z.string().min(1), title: z.string(), owner: z.string().min(1),
+  role: z.enum(['owner', 'member', 'administrator']), updatedAt: z.string().datetime()
+})
+const projectCardsSchema = z.strictObject({ projects: z.array(projectCardSchema) })
 
 export interface PendingDesktopFlow {
   readonly requestId: string
@@ -27,7 +33,7 @@ export interface PendingDesktopFlow {
 
 export type PollOutcome =
   | { readonly status: 'pending'; readonly pollIntervalSeconds: number }
-  | { readonly status: 'approved'; readonly token: string; readonly user: DesktopIdentity }
+  | { readonly status: 'approved'; readonly token: string; readonly user: DesktopIdentity; readonly projectCardsGrant?: string }
 
 export class DesktopAuthError extends Error {
   constructor(readonly code: string, message: string) {
@@ -76,6 +82,10 @@ export class DesktopAuthClient {
     return meSchema.parse(await this.request('/auth/desktop/me', { method: 'GET', token })).user
   }
 
+  async projectCards(grant: string): Promise<readonly DesktopProjectCard[]> {
+    return projectCardsSchema.parse(await this.request('/auth/desktop/project-cards', { method: 'GET', token: grant })).projects
+  }
+
   async logout(token: string): Promise<void> {
     await this.request('/auth/desktop/logout', { method: 'POST', token })
   }
@@ -106,6 +116,7 @@ export class DesktopAuthClient {
         : code === 'DEVICE_FLOW_EXPIRED' ? '连接码已过期，请重新开始'
         : code === 'DEVICE_FLOW_DENIED' ? '这次设备连接已被拒绝'
         : code === 'DEVICE_TOKEN_INVALID' ? '设备连接已失效或到期，请重新连接'
+        : code === 'DESKTOP_PROJECT_GRANT_INVALID' ? '项目卡授权已失效，请重新连接并授权'
         : `组织服务暂时无法完成请求 (${response.status})`
       throw new DesktopAuthError(code, message)
     }

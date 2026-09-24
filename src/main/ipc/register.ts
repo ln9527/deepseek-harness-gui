@@ -42,7 +42,8 @@ const desktopAuthChannels = new Set<string>([
   IpcChannel.DesktopAuthOpen,
   IpcChannel.DesktopAuthManage,
   IpcChannel.DesktopAuthCancel,
-  IpcChannel.DesktopAuthDisconnect
+  IpcChannel.DesktopAuthDisconnect,
+  IpcChannel.DesktopProjectCardsGet
 ])
 
 export interface IpcActions {
@@ -199,6 +200,11 @@ export function registerIpc(deps: IpcDeps): void {
       channel: IpcChannel.DesktopAuthDisconnect,
       schema: voidSchema,
       handler: () => deps.desktopAuth.disconnect()
+    },
+    {
+      channel: IpcChannel.DesktopProjectCardsGet,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.projectCards()
     }
   ]
 

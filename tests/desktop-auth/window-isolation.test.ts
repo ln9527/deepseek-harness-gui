@@ -13,15 +13,19 @@ vi.mock('electron', () => ({
 beforeEach(() => { handlers.clear() })
 
 describe('desktop identity window boundary', () => {
-  it('rejects a DSH page asking for connection state through the shared preload', () => {
+  it('rejects a DSH page asking for identity or project cards through the shared preload', async () => {
     const deps = {
-      desktopAuth: { snapshot: () => ({ status: 'connected', user: { username: 'alice', role: 'member' }, saved: true }) },
+      desktopAuth: { snapshot: () => ({ status: 'connected', user: { username: 'alice', role: 'member' }, saved: true }),
+        projectCards: async () => ({ status: 'ready', projects: [{ projectId: 'p', title: 'Card', owner: 'alice', role: 'owner', updatedAt: '2026-09-25T00:00:00.000Z' }] }) },
       actions: { isManageWebContents: (id: number) => id === 1 }
     } as unknown as IpcDeps
     registerIpc(deps)
     const get = handlers.get(IpcChannel.DesktopAuthGet)!
     expect(get({ sender: { id: 2 } })).toMatchObject({ ok: false, error: { code: 'AUTH_IPC_FORBIDDEN' } })
     expect(get({ sender: { id: 1 } })).toMatchObject({ status: 'connected', user: { username: 'alice' } })
+    const cards = handlers.get(IpcChannel.DesktopProjectCardsGet)!
+    expect(cards({ sender: { id: 2 } })).toMatchObject({ ok: false, error: { code: 'AUTH_IPC_FORBIDDEN' } })
+    expect(await cards({ sender: { id: 1 } })).toMatchObject({ status: 'ready', projects: [{ title: 'Card' }] })
   })
 
   it('pushes identity only to the manage window, never all windows', () => {

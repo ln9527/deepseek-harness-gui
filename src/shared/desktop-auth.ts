@@ -4,6 +4,19 @@ export interface DesktopIdentity {
   readonly role: string
 }
 
+/** Project metadata only. The grant and collaborator list stay in the main process/Gateway. */
+export interface DesktopProjectCard {
+  readonly projectId: string
+  readonly title: string
+  readonly owner: string
+  readonly role: 'owner' | 'member' | 'administrator'
+  readonly updatedAt: string
+}
+
+export type DesktopProjectCardsState =
+  | { readonly status: 'ready'; readonly projects: readonly DesktopProjectCard[] }
+  | { readonly status: 'no-grant' | 'reauthorize' | 'offline' | 'unavailable' }
+
 export type DesktopAuthState =
   | { readonly status: 'disconnected' }
   | { readonly status: 'pending'; readonly userCode: string; readonly expiresAt: number; readonly verificationUrl: string }

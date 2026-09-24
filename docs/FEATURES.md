@@ -51,3 +51,4 @@
 | 分支 | 功能 | 状态 | 说明 |
 |---|---|---|---|
 | `codex/desktop-org-login-20260925` | 桌面组织连接 | 待联测 | 浏览器设备授权、主进程轮询、受限身份凭据、系统加密存储、管理窗连接状态；仅身份连接，不含组织资料同步。详见 [DESKTOP-ORG-CONNECTION.md](./DESKTOP-ORG-CONNECTION.md)。 |
+| `codex/gui-project-cards-20260925` | 管理窗组织项目卡 | 原型待验收 | 浏览器明确授权后，独立 grant 只在主进程与系统加密存储，管理窗按当前 Gateway 权限读取五项元数据；不含文件、Context 或本地 DSH 授权。详见 [DESKTOP-PROJECT-CARDS.md](./DESKTOP-PROJECT-CARDS.md)。 |
