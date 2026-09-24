@@ -89,6 +89,9 @@ jobs:
       - name: Exercise packaged management-window sign-in on Windows
         run: node scripts/tests/desktop-auth-packaged.mjs --unpacked
         timeout-minutes: 5
+      - name: Exercise installed test-only NSIS on Windows
+        run: node scripts/tests/desktop-auth-packaged.mjs --nsis
+        timeout-minutes: 15
       - name: Upload synthetic UI evidence
         if: always()
         uses: actions/upload-artifact@v4
