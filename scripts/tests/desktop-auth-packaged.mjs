@@ -32,9 +32,12 @@ const executablePath = mode === '--nsis' ? join(installDir, 'DSH GUI Test.exe')
 let installed = false
 
 function runInstaller(exe, args) {
-  const result = spawnSync(exe, args, { timeout: 120_000, windowsHide: true, encoding: 'utf8' })
+  // NSIS can create child processes. Do not wait for inherited stdio pipes to
+  // close after the installer itself exits.
+  const result = spawnSync(exe, args, { timeout: 180_000, windowsHide: true, stdio: 'ignore' })
   if (result.error || result.status !== 0) {
-    throw new Error(`NSIS ${args[0]} failed: ${result.error?.message ?? `exit ${result.status}`}`)
+    const entries = existsSync(installDir) ? readdirSync(installDir).slice(0, 12).join(', ') : '(missing)'
+    throw new Error(`NSIS ${args[0]} failed: ${result.error?.message ?? `exit ${result.status}`}; installedExe=${existsSync(executablePath)}; tempInstallEntries=${entries}`)
   }
 }
 
@@ -45,16 +48,20 @@ function installTestApp() {
   // electron-builder 26.15.3's per-user NSIS template accepts /S and a final
   // unquoted /D= path. Use a disposable path and reject accidental spaces.
   if (/\s/.test(installDir)) throw new Error('NSIS test installation directory must have no spaces')
+  process.stdout.write('Starting isolated silent test NSIS installation.\n')
   runInstaller(installer, ['/S', `/D=${installDir}`])
   installed = true
   if (!existsSync(executablePath)) throw new Error('NSIS finished without installing the test executable in the requested directory')
+  process.stdout.write('Isolated silent test NSIS installation completed.\n')
 }
 
 function uninstallTestApp() {
   if (!existsSync(installDir)) return
   const uninstaller = readdirSync(installDir).find((name) => /^Uninstall .*\.exe$/i.test(name))
   if (!uninstaller) throw new Error('NSIS test uninstaller is missing')
+  process.stdout.write('Starting isolated silent test NSIS uninstallation.\n')
   runInstaller(join(installDir, uninstaller), ['/S'])
+  process.stdout.write('Isolated silent test NSIS uninstallation completed.\n')
 }
 
 function createFixture() {

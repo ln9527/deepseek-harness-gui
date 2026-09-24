@@ -46,8 +46,21 @@ Windows 桌面完成真实浏览器批准、拒绝、过期、离线与可见安
 [首次 Windows 探针 run 36038815617](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36038815617)
 中，未安装版的连接、保存、重启和撤销断言都通过，job 最后因测试夹具
 把 Edge 的缓存放进临时目录，Windows 文件锁阻止目录清理而失败。
-夹具现在只重定向本应用的数据与 DSH_HOME，等待新的 Windows CI 复验；
-静默安装版也尚待首次 CI 执行。
+随后夹具改为只重定向本应用的数据与 DSH_HOME，并通过了下一次运行的
+未安装版步骤。
+
+[第二次 Windows 探针 run 36039856360](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36039856360)
+中，macOS、标准 Windows 和测试版 `win-unpacked` 界面步骤均通过；后者在
+真实 Windows runner 上完成了合成账号连接、加密保存、退出重启后 `/me`
+验证及撤销后清除本地凭据。下图是该次运行的真实管理窗截图，账号为
+临时合成账号，画面不含设备 token：
+
+![Windows CI 中未安装版的合成账号已连接管理窗](assets/windows-auth-unpacked-36039856360.png)
+
+同一次 run 的静默 NSIS 安装在 `/S /D=<临时目录>` 命令上达到 120 秒
+超时，安装后的 UI 流程并未运行。新的诊断尝试关闭安装器的继承输出管道、
+限定 180 秒，并在超时时记录临时安装目录是否出现可执行文件；只有下一次
+Windows CI 通过后，才能把静默安装版计为已验证。
 
 ## 在测试 Windows x64 机器准备
 
