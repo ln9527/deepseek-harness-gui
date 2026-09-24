@@ -56,3 +56,33 @@ jobs:
           name: DSH-GUI-Setup-win-x64
           path: dist-win/*.exe
           retention-days: 14
+
+  windows-auth-acceptance:
+    name: Windows x64 (test-only local Gateway installer)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      DSH_GUI_TEST_GATEWAY_ORIGIN: http://127.0.0.1:47621
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Ensure Electron binary downloaded
+        run: node node_modules/electron/install.js
+      - name: Build test-only NSIS installer
+        run: pnpm dist:win:test
+      - name: Record installer SHA-256
+        shell: pwsh
+        run: Get-ChildItem dist-win-test/*-Setup-*.exe | Get-FileHash -Algorithm SHA256 | Format-List
+      - name: Upload test-only installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH-GUI-Test-Setup-win-x64-TEST-ONLY
+          path: dist-win-test/DSH-GUI-Test-Setup-*.exe
+          retention-days: 14

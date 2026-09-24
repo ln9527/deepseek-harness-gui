@@ -6,6 +6,7 @@
 import { app, dialog, Notification, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
 import { hostname } from 'node:os'
+import { mkdirSync } from 'node:fs'
 import type { DshRuntimeSnapshot, DshSpawnContract, Result } from '../shared/contracts'
 import { getLogger, initLogger } from './logger'
 import { resolveStoragePaths } from './util/paths'
@@ -31,12 +32,23 @@ import { DesktopAuthClient } from './desktop-auth/client'
 import { DesktopCredentialStore } from './desktop-auth/credential-store'
 import { DesktopAuthService } from './desktop-auth/service'
 
+declare const __DSH_GUI_TEST_VARIANT__: boolean
+declare const __DSH_GUI_GATEWAY_ORIGIN__: string
+
 let focusMain: (() => void) | null = null
 
 function bootstrap(): void {
+  const appTitle = __DSH_GUI_TEST_VARIANT__ ? 'DSH GUI Test' : 'DSH GUI'
+  if (__DSH_GUI_TEST_VARIANT__) {
+    app.setName(appTitle)
+    const testUserData = join(app.getPath('appData'), 'DSH GUI Test')
+    mkdirSync(testUserData, { recursive: true })
+    app.setPath('userData', testUserData)
+    app.setAppLogsPath(join(testUserData, 'logs'))
+  }
   // Windows toast 通知需要稳定的 AppUserModelId
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.ningli.dshgui')
+    app.setAppUserModelId(__DSH_GUI_TEST_VARIANT__ ? 'com.ningli.dshgui.test' : 'com.ningli.dshgui')
   }
   const gotLock = app.requestSingleInstanceLock()
   if (!gotLock) {
@@ -164,20 +176,21 @@ function bootstrap(): void {
       devServerUrl,
       rendererDistDir,
       preloadPath,
+      appTitle,
       initialBounds: { width: initialWindow.width, height: initialWindow.height },
       onManageRequested: () => manageWindow.open(),
       onBoundsChanged: (bounds) => {
         settingsStore.update({ window: bounds })
       }
     })
-    const manageWindow = new ManageWindowController({ devServerUrl, rendererDistDir, preloadPath })
+    const manageWindow = new ManageWindowController({ devServerUrl, rendererDistDir, preloadPath, appTitle })
     focusMain = () => mainWindow.show()
 
     const desktopAuth = new DesktopAuthService({
-      client: new DesktopAuthClient(),
-      store: new DesktopCredentialStore(join(paths.userDataDir, 'desktop-credential.bin'), safeStorage),
+      client: new DesktopAuthClient(__DSH_GUI_GATEWAY_ORIGIN__),
+      store: new DesktopCredentialStore(join(paths.userDataDir, 'desktop-credential.bin'), safeStorage, __DSH_GUI_GATEWAY_ORIGIN__),
       openExternal: (url) => shell.openExternal(url),
-      deviceName: `DSH GUI (${process.platform === 'win32' ? 'Windows' : 'macOS'}) · ${hostname().slice(0, 48)}`,
+      deviceName: `${appTitle} (${process.platform === 'win32' ? 'Windows' : 'macOS'}) · ${hostname().slice(0, 48)}`,
       onState: (state) => manageWindow.sendDesktopAuth(state)
     })
     void desktopAuth.refresh()
