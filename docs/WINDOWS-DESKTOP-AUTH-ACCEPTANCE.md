@@ -9,20 +9,24 @@
 
 ## CI 候选与证据（2026-09-25）
 
-[CI run 36036192943](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36036192943)
-在提交 `507ecb62a40cca2c5c5e9467a6dfc014810b3ec9` 上完成：macOS
-测试、标准 Windows 测试与安装包、测试专用 Windows 安装包三个 job 均通过。
-标准 Windows job 的 Vitest 为 114 通过、1 跳过，原生 GLM 测试 8/8
-通过，且生成并上传了标准 NSIS 安装包。
+[CI run 36042904833](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833)
+在提交 `2421377cb8117d68d768b383285514242ce069ed` 上完成：macOS
+测试、标准 Windows 测试与 NSIS 构建、测试专用 Windows NSIS 构建和
+`win-unpacked` 管理窗自动检查三个 job 均通过。Windows 管理窗日志分别
+确认合成账号连接和加密保存、退出重启后 `/me` 重验、组织撤权后清除本地凭据。
 
 本次 Windows 人工验收请取该 run 的
-[DSH-GUI-Test-Setup-win-x64-TEST-ONLY artifact](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36036192943/artifacts/10825232065)
+[DSH-GUI-Test-Setup-win-x64-TEST-ONLY artifact](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833/artifacts/10827811329)
 （14 天保留）。其中 EXE 文件名为
 `DSH-GUI-Test-Setup-0.2.1-x64.exe`，Windows runner 用 `Get-FileHash`
 记录的 EXE SHA-256 为
-`c7bfc5951933f8d5ef0fb7dea6dc43d298aeb376ca0a2c0738416e0a57587b24`。
+`918bf2584bffd2672862b433044021ee128cb6988bd49cb286034919d1037a28`。
 GitHub 上传归档的 SHA-256 为
-`630e8906a4c5375755cddd6bb08f801aeec34652b8e3560afac20c8dcd3000b1`。
+`48f094eebbc551573090abdf1cbd8cf1cc88b65e9442c1f5634526b125855b73`。
+同一 run 的[标准版安装包归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833/artifacts/10828121159)
+SHA-256 为 `cab3105da902e80f83526a8cd14e5a88df4f8c26010301625a1d08321bb53728`；
+[合成 UI 截图归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833/artifacts/10827796464)
+SHA-256 为 `f766c8169ca3848dc63b5bd98eac00edc33de63e9e919bb962619241cff339ae`。
 这个候选只证明 Windows CI 构建和自动测试通过；尚未在 Windows
 桌面上完成以下浏览器批准、重启、撤销、拒绝、过期与离线交互验收。
 
@@ -50,12 +54,14 @@ Windows 桌面完成真实浏览器批准、拒绝、过期、离线与可见安
 [第二次 Windows 探针 run 36039856360](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36039856360)
 中，macOS、标准 Windows 和测试版 `win-unpacked` 界面步骤均通过；后者在
 真实 Windows runner 上完成了合成账号连接、加密保存、退出重启后 `/me`
-验证及撤销后清除本地凭据。下图是该次运行的真实管理窗截图，账号为
-临时合成账号，画面不含设备 token：
+验证及撤销后清除本地凭据。最新全绿 run 36042904833 复现上述三段断言。
+其截图经目视检查，只含临时合成用户名、不含设备 token；截图文件 SHA-256
+为 `2781710b2828374b97d4d15c1e492ebbcba6a682b3f9e4e36efbeae897a21521`，
+与下方已入库的早一次 Windows runner 截图逐字节相同：
 
 ![Windows CI 中未安装版的合成账号已连接管理窗](assets/windows-auth-unpacked-36039856360.png)
 
-同一次 run 的静默 NSIS 安装在 `/S /D=<临时目录>` 命令上达到 120 秒
+run 36039856360 的静默 NSIS 安装在 `/S /D=<临时目录>` 命令上达到 120 秒
 超时。[第三次 run 36041304205](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36041304205)
 去掉继承输出管道并把上限设为 180 秒后仍超时；超时时临时目录已出现
 `DSH GUI Test.exe` 和部分 Electron 文件。安装器进程未在上限内退出，
