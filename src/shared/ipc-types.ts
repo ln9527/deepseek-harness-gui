@@ -5,6 +5,7 @@
 
 import type { DshRuntimeSnapshot, Result } from './contracts'
 import type { ShellSettings, ShellSettingsPatch } from './settings'
+import type { DesktopAuthState } from './desktop-auth'
 
 export const IpcChannel = {
   // renderer → main (invoke)
@@ -23,10 +24,18 @@ export const IpcChannel = {
   EnvHint: 'env:hint',
   AppQuit: 'app:quit',
   ManageOpen: 'manage:open',
+  DesktopAuthGet: 'desktop-auth:get',
+  DesktopAuthRefresh: 'desktop-auth:refresh',
+  DesktopAuthStart: 'desktop-auth:start',
+  DesktopAuthOpen: 'desktop-auth:open',
+  DesktopAuthManage: 'desktop-auth:manage',
+  DesktopAuthCancel: 'desktop-auth:cancel',
+  DesktopAuthDisconnect: 'desktop-auth:disconnect',
   // main → renderer (push)
   StateChanged: 'state:changed',
   InstallProgress: 'install:progress',
-  SettingsChanged: 'settings:changed'
+  SettingsChanged: 'settings:changed',
+  DesktopAuthChanged: 'desktop-auth:changed'
 } as const
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel]
@@ -83,4 +92,12 @@ export interface DshShellApi {
   openLogsFolder(): Promise<Result<null>>
   getLogTail(req: { maxLines: number }): Promise<readonly string[]>
   getEnvHint(): Promise<EnvHint>
+  getDesktopAuth(): Promise<DesktopAuthState>
+  refreshDesktopAuth(): Promise<Result<null>>
+  startDesktopAuth(): Promise<Result<DesktopAuthState>>
+  openDesktopVerification(): Promise<Result<null>>
+  openDesktopDeviceManagement(): Promise<Result<null>>
+  cancelDesktopAuth(): Promise<Result<null>>
+  disconnectDesktopAuth(): Promise<Result<null>>
+  onDesktopAuthChanged(cb: (state: DesktopAuthState) => void): () => void
 }

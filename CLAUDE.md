@@ -11,8 +11,9 @@ DSH GUI — an Electron (100% TypeScript) desktop shell for [DeepSeek Harness](h
 ```bash
 pnpm dev        # dev mode (HMR); opens a real window on this Mac
 pnpm test       # vitest, all tests
-pnpm test -- tests/notify-bridge/dedupe.test.ts        # single file
-pnpm test -- -t "退避"                                  # single test by name
+pnpm exec vitest run tests/notify-bridge/dedupe.test.ts # single Vitest file
+pnpm exec vitest run -t "退避"                           # single Vitest test by name
+node --test scripts/tests/patch-glm53.native.mjs        # GLM catalog native Node tests
 pnpm typecheck  # two tsconfigs (node + web), both must pass
 pnpm icons      # regenerate app/tray icons (pure-node PNG writer in scripts/gen-icons.mjs)
 pnpm fetch:runtime [--platform win32]   # materialize bundled DSH tree (skips if present)

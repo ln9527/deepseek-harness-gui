@@ -6,6 +6,8 @@
 import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { getLogger } from '../logger'
+import type { DesktopAuthState } from '../../shared/desktop-auth'
+import { IpcChannel } from '../../shared/ipc-types'
 
 const log = getLogger('manage-window')
 
@@ -13,9 +15,10 @@ export interface ManageWindowDeps {
   readonly devServerUrl: string | null
   readonly rendererDistDir: string
   readonly preloadPath: string
+  readonly appTitle?: string
 }
 
-export type ManageTab = 'versions' | 'settings' | 'logs' | 'about'
+export type ManageTab = 'versions' | 'settings' | 'account' | 'logs' | 'about'
 
 export class ManageWindowController {
   private window: BrowserWindow | null = null
@@ -27,6 +30,16 @@ export class ManageWindowController {
     this.quitting = quitting
     if (quitting && this.window) {
       this.window.close()
+    }
+  }
+
+  ownsWebContents(senderId: number): boolean {
+    return this.window !== null && !this.window.isDestroyed() && this.window.webContents.id === senderId
+  }
+
+  sendDesktopAuth(state: DesktopAuthState): void {
+    if (this.window !== null && !this.window.isDestroyed()) {
+      this.window.webContents.send(IpcChannel.DesktopAuthChanged, state)
     }
   }
 
@@ -43,7 +56,7 @@ export class ManageWindowController {
       width: 760,
       height: 600,
       show: false,
-      title: 'DSH GUI 管理',
+      title: `${this.deps.appTitle ?? 'DSH GUI'} 管理`,
       autoHideMenuBar: true,
       resizable: true,
       webPreferences: {
@@ -52,6 +65,8 @@ export class ManageWindowController {
         nodeIntegration: false
       }
     })
+    this.window.webContents.on('will-navigate', (event) => event.preventDefault())
+    this.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     this.window.on('close', (event) => {
       if (!this.quitting) {
         event.preventDefault()

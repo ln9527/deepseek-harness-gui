@@ -41,10 +41,12 @@ jobs:
       - run: pnpm typecheck
       - name: Materialize win32 runtime
         run: node scripts/fetch-builtin-runtime.mjs --platform win32
+      - name: Check native GLM catalog module import
+        run: node --check scripts/patch-glm53.mjs && node -e "import('./scripts/patch-glm53.mjs').then(m => { if (typeof m.patchCatalog !== 'function') process.exit(1) })"
       - run: pnpm test
         env:
-          # 在真 Windows 上跑内置运行时冒烟:Electron-as-Node 拉起 win32-x64
-          # 内置 DSH 树,断言 banner + host.describe + 退出
+          # 在真 Windows 上用打包的真实 node.exe 拉起 win32-x64 DSH 树,
+          # 验证 tokened banner、cookie 门禁与退出（0.1.5 契约）。
           RUN_BUILTIN_SMOKE: '1'
       - name: Build NSIS installer
         run: pnpm exec electron-vite build && pnpm exec electron-builder --win --x64 --config electron-builder.win.yml --publish never
@@ -53,4 +55,45 @@ jobs:
         with:
           name: DSH-GUI-Setup-win-x64
           path: dist-win/*.exe
+          retention-days: 14
+
+  windows-auth-acceptance:
+    name: Windows x64 (test-only local Gateway installer)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      DSH_GUI_TEST_GATEWAY_ORIGIN: http://127.0.0.1:47621
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Ensure Electron binary downloaded
+        run: node node_modules/electron/install.js
+      - name: Build test-only NSIS installer
+        run: pnpm dist:win:test
+      - name: Record installer SHA-256
+        shell: pwsh
+        run: Get-ChildItem dist-win-test/*-Setup-*.exe | Get-FileHash -Algorithm SHA256 | Format-List
+      - name: Upload test-only installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH-GUI-Test-Setup-win-x64-TEST-ONLY
+          path: dist-win-test/DSH-GUI-Test-Setup-*.exe
+          retention-days: 14
+      - name: Exercise packaged management-window sign-in on Windows
+        run: node scripts/tests/desktop-auth-packaged.mjs --unpacked
+        timeout-minutes: 5
+      - name: Upload synthetic UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH-GUI-Test-Windows-UI-evidence
+          path: dist-win-test/ui-evidence/*.png
+          if-no-files-found: ignore
           retention-days: 14

@@ -29,10 +29,21 @@ import { hasDeepseekApiKey, hasDeepseekBaseUrl } from '../deepseek/api-key'
 import type { VersionInstaller } from '../dsh-versions/installer'
 import type { DshRuntimeSupervisor } from '../dsh-runtime/supervisor'
 import type { SettingsStore } from '../settings/store'
+import type { DesktopAuthService } from '../desktop-auth/service'
 import { err, errFromUnknown, ok } from '../util/result'
 import type { ZodType } from 'zod'
 
 const log = getLogger('ipc')
+
+const desktopAuthChannels = new Set<string>([
+  IpcChannel.DesktopAuthGet,
+  IpcChannel.DesktopAuthRefresh,
+  IpcChannel.DesktopAuthStart,
+  IpcChannel.DesktopAuthOpen,
+  IpcChannel.DesktopAuthManage,
+  IpcChannel.DesktopAuthCancel,
+  IpcChannel.DesktopAuthDisconnect
+])
 
 export interface IpcActions {
   readonly quit: () => void
@@ -40,6 +51,7 @@ export interface IpcActions {
   readonly openLogsFolder: () => void
   readonly getActiveVersion: () => string | null
   readonly selectVersion: (version: string) => Result<null>
+  readonly isManageWebContents: (senderId: number) => boolean
 }
 
 export interface IpcDeps {
@@ -50,6 +62,7 @@ export interface IpcDeps {
   readonly versionsRoot: string
   readonly builtinRuntimeRoot: string
   readonly actions: IpcActions
+  readonly desktopAuth: DesktopAuthService
 }
 
 interface InvokeEntry {
@@ -148,11 +161,54 @@ export function registerIpc(deps: IpcDeps): void {
           hasDeepseekBaseUrl: hasDeepseekBaseUrl(process.env, extraEnv)
         }
       }
+    },
+    {
+      channel: IpcChannel.DesktopAuthGet,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.snapshot()
+    },
+    {
+      channel: IpcChannel.DesktopAuthRefresh,
+      schema: voidSchema,
+      handler: async () => {
+        await deps.desktopAuth.refresh()
+        return ok(null)
+      }
+    },
+    {
+      channel: IpcChannel.DesktopAuthStart,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.start()
+    },
+    {
+      channel: IpcChannel.DesktopAuthOpen,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.openVerification()
+    },
+    {
+      channel: IpcChannel.DesktopAuthManage,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.openDeviceManagement()
+    },
+    {
+      channel: IpcChannel.DesktopAuthCancel,
+      schema: voidSchema,
+      handler: () => withResult(() => deps.desktopAuth.cancel())
+    },
+    {
+      channel: IpcChannel.DesktopAuthDisconnect,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.disconnect()
     }
   ]
 
   for (const entry of entries) {
-    ipcMain.handle(entry.channel, (_event, rawPayload: unknown) => {
+    ipcMain.handle(entry.channel, (event, rawPayload: unknown) => {
+      // The same preload also runs inside upstream DSH's page. Only our local
+      // manage window may drive account connection or observe its state.
+      if (desktopAuthChannels.has(entry.channel) && !deps.actions.isManageWebContents(event.sender.id)) {
+        return err('AUTH_IPC_FORBIDDEN', '此操作仅可在管理窗口中执行')
+      }
       const parsed = entry.schema.safeParse(rawPayload)
       if (!parsed.success) {
         log.warn('ipc payload rejected', { channel: entry.channel })

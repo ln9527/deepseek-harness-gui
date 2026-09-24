@@ -2,6 +2,7 @@ node_modules/
 out/
 dist/
 dist-win/
+dist-win-test/
 *.log
 .DS_Store
 .env

@@ -3,8 +3,10 @@
  * supervisor / 通知桥 / 窗口 / 托盘 / IPC → before-quit 优雅关停。
  */
 
-import { app, dialog, Notification, shell } from 'electron'
-import { join } from 'node:path'
+import { app, dialog, Notification, safeStorage, shell } from 'electron'
+import { basename, isAbsolute, join } from 'node:path'
+import { hostname } from 'node:os'
+import { mkdirSync } from 'node:fs'
 import type { DshRuntimeSnapshot, DshSpawnContract, Result } from '../shared/contracts'
 import { getLogger, initLogger } from './logger'
 import { resolveStoragePaths } from './util/paths'
@@ -26,13 +28,33 @@ import { MainWindowController } from './windows/main-window'
 import { ManageWindowController } from './windows/manage-window'
 import { TrayController } from './tray/tray'
 import { broadcastInstallProgress, broadcastSettings, broadcastSnapshot, registerIpc } from './ipc/register'
+import { DesktopAuthClient } from './desktop-auth/client'
+import { DesktopCredentialStore } from './desktop-auth/credential-store'
+import { DesktopAuthService } from './desktop-auth/service'
+
+declare const __DSH_GUI_TEST_VARIANT__: boolean
+declare const __DSH_GUI_GATEWAY_ORIGIN__: string
 
 let focusMain: (() => void) | null = null
 
 function bootstrap(): void {
+  const appTitle = __DSH_GUI_TEST_VARIANT__ ? 'DSH GUI Test' : 'DSH GUI'
+  if (__DSH_GUI_TEST_VARIANT__) {
+    app.setName(appTitle)
+    // CI may point the test-only app at a disposable profile. The public app
+    // has no such override and the test app's default remains separate.
+    const override = process.env.DSH_GUI_TEST_USER_DATA_DIR
+    if (override && (!isAbsolute(override) || basename(override) !== 'DSH GUI Test')) {
+      throw new Error('DSH_GUI_TEST_USER_DATA_DIR must be an absolute DSH GUI Test directory')
+    }
+    const testUserData = override ?? join(app.getPath('appData'), 'DSH GUI Test')
+    mkdirSync(testUserData, { recursive: true })
+    app.setPath('userData', testUserData)
+    app.setAppLogsPath(join(testUserData, 'logs'))
+  }
   // Windows toast 通知需要稳定的 AppUserModelId
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.ningli.dshgui')
+    app.setAppUserModelId(__DSH_GUI_TEST_VARIANT__ ? 'com.ningli.dshgui.test' : 'com.ningli.dshgui')
   }
   const gotLock = app.requestSingleInstanceLock()
   if (!gotLock) {
@@ -160,14 +182,24 @@ function bootstrap(): void {
       devServerUrl,
       rendererDistDir,
       preloadPath,
+      appTitle,
       initialBounds: { width: initialWindow.width, height: initialWindow.height },
       onManageRequested: () => manageWindow.open(),
       onBoundsChanged: (bounds) => {
         settingsStore.update({ window: bounds })
       }
     })
-    const manageWindow = new ManageWindowController({ devServerUrl, rendererDistDir, preloadPath })
+    const manageWindow = new ManageWindowController({ devServerUrl, rendererDistDir, preloadPath, appTitle })
     focusMain = () => mainWindow.show()
+
+    const desktopAuth = new DesktopAuthService({
+      client: new DesktopAuthClient(__DSH_GUI_GATEWAY_ORIGIN__),
+      store: new DesktopCredentialStore(join(paths.userDataDir, 'desktop-credential.bin'), safeStorage, __DSH_GUI_GATEWAY_ORIGIN__),
+      openExternal: (url) => shell.openExternal(url),
+      deviceName: `${appTitle} (${process.platform === 'win32' ? 'Windows' : 'macOS'}) · ${hostname().slice(0, 48)}`,
+      onState: (state) => manageWindow.sendDesktopAuth(state)
+    })
+    void desktopAuth.refresh()
 
     // ---- 通知桥 ----
     const bridge = new NotifyBridge()
@@ -314,6 +346,7 @@ function bootstrap(): void {
       mainWindow.setQuitting(true)
       manageWindow.setQuitting(true)
       bridge.detach()
+      desktopAuth.dispose()
       void (async () => {
         await supervisor.stop()
         supervisor.dispose()
@@ -343,6 +376,7 @@ function bootstrap(): void {
       npmRunner,
       versionsRoot: paths.versionsRoot,
       builtinRuntimeRoot: paths.builtinRuntimeRoot,
+      desktopAuth,
       actions: {
         quit: () => requestQuit(),
         openManage: () => manageWindow.open(),
@@ -350,6 +384,7 @@ function bootstrap(): void {
           void shell.openPath(app.getPath('logs'))
         },
         getActiveVersion: () => supervisor.snapshot().version,
+        isManageWebContents: (senderId) => manageWindow.ownsWebContents(senderId),
         selectVersion: (version: string): Result<null> => {
           settingsStore.update({ pinnedVersion: version })
           refreshTarget()

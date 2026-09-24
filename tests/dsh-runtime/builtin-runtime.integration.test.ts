@@ -1,34 +1,28 @@
 /**
- * 内置运行时冒烟(真机链路):用 Electron-as-Node 从打包同款位置
- * (resources/dsh-runtime[-win]/<ver>)启动内置 DSH 树,验证
- * banner → host.describe → 优雅退出。CI 在 windows-latest 上跑
- * 即可覆盖 win32 树 + Windows 运行链(RUN_BUILTIN_SMOKE=1 触发)。
+ * Real bundled DSH boot. Version 0.1.5 authenticates the first visit using
+ * the tokened banner URL, redirects to /, then requires the issued cookie.
+ * On Windows use the bundled real node.exe, matching the shipped app.
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { parseBannerUrl } from '../../src/main/dsh-runtime/banner-parser'
 import { builtinRuntimeDirName } from '../../src/main/util/paths'
 
 const enabled = process.env.RUN_BUILTIN_SMOKE === '1'
 const runtimeRoot = join(process.cwd(), 'resources', builtinRuntimeDirName())
-const electronBinary = join(
-  process.cwd(),
-  'node_modules',
-  'electron',
-  'dist',
-  process.platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron'
-)
+const executable = process.platform === 'win32'
+  ? join(process.cwd(), 'resources', 'node-runtime-win', 'node.exe')
+  : join(process.cwd(), 'node_modules', 'electron', 'dist', 'Electron.app', 'Contents', 'MacOS', 'Electron')
 
 describe.skipIf(!enabled)('内置 DSH 运行时冒烟(真实子进程)', () => {
-  it.skipIf(!existsSync(runtimeRoot) || !existsSync(electronBinary))(
-    'Electron-as-Node 启动内置树 → banner → host.describe → 退出',
+  it.skipIf(!existsSync(runtimeRoot) || !existsSync(executable))(
+    '内置树启动 → tokened banner → 浏览器 cookie 门禁 → 退出',
     async () => {
-      const versionDirs = existsSync(runtimeRoot)
-        ? readdirSync(runtimeRoot).filter((d) => !d.startsWith('.') && !d.startsWith('tmp-'))
-        : []
+      const versionDirs = readdirSync(runtimeRoot).filter((d) => !d.startsWith('.') && !d.startsWith('tmp-'))
       expect(versionDirs.length, 'resources 下应有已物化的内置版本').toBeGreaterThan(0)
       const version = versionDirs[versionDirs.length - 1] ?? ''
       const entry = join(runtimeRoot, version, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
@@ -36,59 +30,57 @@ describe.skipIf(!enabled)('内置 DSH 运行时冒烟(真实子进程)', () => {
 
       const dshHome = mkdtempSync(join(tmpdir(), 'dsh-smoke-home-'))
       const child = spawn(
-        electronBinary,
-        ['--expose-internals', entry, 'web', '--host', '127.0.0.1', '--port', '0'],
+        executable,
+        [
+          ...(process.platform === 'win32' ? [] : ['--expose-internals']),
+          entry, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'
+        ],
         {
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DSH_HOME: dshHome },
+          env: {
+            ...process.env,
+            ...(process.platform === 'win32' ? {} : { ELECTRON_RUN_AS_NODE: '1' }),
+            DSH_HOME: dshHome
+          },
           stdio: ['ignore', 'pipe', 'pipe']
         }
       )
       let output = ''
-      child.stdout?.on('data', (chunk: Buffer) => {
-        output += chunk.toString()
-      })
-      child.stderr?.on('data', (chunk: Buffer) => {
-        output += chunk.toString()
-      })
+      child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
+      child.stderr?.on('data', (chunk: Buffer) => { output += chunk.toString() })
 
-      // 等 banner(CI 冷启动最多 60s)
-      const banner = await waitForBanner()
-      function waitForBanner(): Promise<number> {
-        return new Promise((resolve, reject) => {
-          const started = Date.now()
+      try {
+        const readyUrl = await new Promise<string>((resolve, reject) => {
+          const deadline = Date.now() + 60_000
           const tick = (): void => {
-            const match = /http:\/\/127\.0\.0\.1:(\d+)/.exec(output)
-            if (match && match[1]) {
-              resolve(Number.parseInt(match[1], 10))
-            } else if (Date.now() - started > 60_000) {
-              reject(new Error(`60s 内未见 banner。输出:\n${output.slice(0, 2000)}`))
-            } else {
-              setTimeout(tick, 500)
-            }
+            const url = parseBannerUrl(output)
+            if (url) resolve(url)
+            else if (Date.now() > deadline || child.exitCode !== null) reject(new Error('内置 DSH 未输出有效的就绪 URL'))
+            else setTimeout(tick, 500)
           }
-          setTimeout(tick, 500)
+          tick()
         })
+        const origin = new URL(readyUrl).origin
+        expect(new URL(readyUrl).searchParams.has('token')).toBe(true)
+
+        const bare = await fetch(`${origin}/`, { redirect: 'manual' })
+        expect(bare.status).toBe(401)
+        const firstVisit = await fetch(readyUrl, { redirect: 'manual' })
+        expect(firstVisit.status).toBe(303)
+        expect(firstVisit.headers.get('location')).toBe('/')
+        const cookie = firstVisit.headers.get('set-cookie')?.split(';')[0]
+        expect(cookie).toBeTruthy()
+        const page = await fetch(`${origin}/`, { headers: { Cookie: cookie ?? '' }, redirect: 'manual' })
+        expect(page.status).toBe(200)
+        expect(page.headers.get('content-type')).toContain('text/html')
+        expect((await page.text()).trimStart()).toMatch(/^<(?:!doctype html|html)/i)
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) {
+          const exited = new Promise<void>((resolve) => { child.once('exit', () => resolve()) })
+          child.kill()
+          await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 15_000))])
+        }
+        rmSync(dshHome, { recursive: true, force: true })
       }
-      expect(banner).toBeGreaterThan(0)
-
-      // host.describe 二次确认(四象限信封)
-      const response = await fetch(`http://127.0.0.1:${banner}/api/host.describe`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${banner}` },
-        body: JSON.stringify({ type: 'client-request', rpcId: 'smoke', method: 'host.describe', payload: {} })
-      })
-      expect(response.ok).toBe(true)
-      const body = (await response.json()) as { result?: { ok?: boolean } }
-      expect(body.result?.ok).toBe(true)
-
-      // 优雅退出(Windows 下 kill 即终止,同样应退出)
-      const exited = new Promise<void>((resolve) => {
-        child.on('exit', () => {
-          resolve()
-        })
-      })
-      child.kill()
-      await Promise.race([exited, new Promise((r) => setTimeout(r, 15_000))])
       expect(child.exitCode !== null || child.signalCode !== null).toBe(true)
     },
     120_000

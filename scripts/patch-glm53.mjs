@@ -26,7 +26,7 @@
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** 补丁针对的两个目录文件:国内 Coding Plan 与国际 z.ai 端点。 */
 const CATALOG_FILES = ['zai-coding-cn.json', 'zai.json']
@@ -151,6 +151,6 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
 }

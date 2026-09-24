@@ -10,10 +10,11 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/tests/patch-glm53.native.mjs",
     "test:watch": "vitest",
     "dist": "node scripts/fetch-builtin-runtime.mjs && electron-vite build && electron-builder --mac --arm64",
     "dist:win": "node scripts/fetch-builtin-runtime.mjs --platform win32 && electron-vite build && electron-builder --win --x64 --config electron-builder.win.yml",
+    "dist:win:test": "node scripts/build-win-test.mjs",
     "fetch:runtime": "node scripts/fetch-builtin-runtime.mjs",
     "icons": "node scripts/gen-icons.mjs",
     "start:packaged": "electron-vite preview"
@@ -29,6 +30,7 @@
     "electron": "43.4.0",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
+    "playwright-core": "1.63.0",
     "typescript": "~5.9.3",
     "vite": "^7.3.6",
     "vitest": "4.1.10"
