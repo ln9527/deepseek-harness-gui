@@ -4,7 +4,7 @@
  */
 
 import { app, dialog, Notification, safeStorage, shell } from 'electron'
-import { join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import { hostname } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import type { DshRuntimeSnapshot, DshSpawnContract, Result } from '../shared/contracts'
@@ -41,7 +41,13 @@ function bootstrap(): void {
   const appTitle = __DSH_GUI_TEST_VARIANT__ ? 'DSH GUI Test' : 'DSH GUI'
   if (__DSH_GUI_TEST_VARIANT__) {
     app.setName(appTitle)
-    const testUserData = join(app.getPath('appData'), 'DSH GUI Test')
+    // CI may point the test-only app at a disposable profile. The public app
+    // has no such override and the test app's default remains separate.
+    const override = process.env.DSH_GUI_TEST_USER_DATA_DIR
+    if (override && (!isAbsolute(override) || basename(override) !== 'DSH GUI Test')) {
+      throw new Error('DSH_GUI_TEST_USER_DATA_DIR must be an absolute DSH GUI Test directory')
+    }
+    const testUserData = override ?? join(app.getPath('appData'), 'DSH GUI Test')
     mkdirSync(testUserData, { recursive: true })
     app.setPath('userData', testUserData)
     app.setAppLogsPath(join(testUserData, 'logs'))

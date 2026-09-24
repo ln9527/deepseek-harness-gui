@@ -86,3 +86,14 @@ jobs:
           name: DSH-GUI-Test-Setup-win-x64-TEST-ONLY
           path: dist-win-test/DSH-GUI-Test-Setup-*.exe
           retention-days: 14
+      - name: Exercise packaged management-window sign-in on Windows
+        run: node scripts/tests/desktop-auth-packaged.mjs
+        timeout-minutes: 5
+      - name: Upload synthetic UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH-GUI-Test-Windows-UI-evidence
+          path: dist-win-test/ui-evidence/*.png
+          if-no-files-found: ignore
+          retention-days: 14
