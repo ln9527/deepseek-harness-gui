@@ -99,7 +99,9 @@ async function installTestApp() {
   // unquoted /D= path. Use a disposable path and reject accidental spaces.
   if (/\s/.test(installDir)) throw new Error('NSIS test installation directory must have no spaces')
   process.stdout.write('Starting isolated silent test NSIS installation.\n')
-  await runInstaller(installer, ['/S', `/D=${installDir}`], 480_000)
+  // The full bundled DSH tree has about 25,000 files. A Windows runner in
+  // run 36046590988 finished extraction and registration after 430 seconds.
+  await runInstaller(installer, ['/S', `/D=${installDir}`], 600_000)
   installed = true
   if (!existsSync(executablePath)) throw new Error('NSIS finished without installing the test executable in the requested directory')
   process.stdout.write('Isolated silent test NSIS installation completed.\n')
@@ -110,7 +112,18 @@ async function uninstallTestApp() {
   const uninstaller = readdirSync(installDir).find((name) => /^Uninstall .*\.exe$/i.test(name))
   if (!uninstaller) throw new Error('NSIS test uninstaller is missing')
   process.stdout.write('Starting isolated silent test NSIS uninstallation.\n')
-  await runInstaller(join(installDir, uninstaller), ['/S'], 120_000)
+  const uninstallerPath = join(installDir, uninstaller)
+  await runInstaller(uninstallerPath, ['/S'], 120_000)
+  // NSIS starts an uninstaller copy from %TEMP% and its original process can
+  // return before the installed files are gone. Wait for observable removal.
+  const deadline = Date.now() + 120_000
+  while (existsSync(executablePath) || existsSync(uninstallerPath)) {
+    if (Date.now() >= deadline) {
+      installSnapshot('uninstall timeout')
+      throw new Error('NSIS returned but installed executable or uninstaller remained after 120s')
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000))
+  }
   process.stdout.write('Isolated silent test NSIS uninstallation completed.\n')
 }
 
@@ -313,7 +326,7 @@ try {
   await new Promise((done) => fixture.server.close(done))
   try {
     if (installed) await uninstallTestApp()
-    rmSync(profileRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
+    rmSync(profileRoot, { recursive: true, force: true, maxRetries: 60, retryDelay: 1_000 })
   } catch (error) { cleanupError = error }
   if (testError) throw testError
   if (cleanupError) throw cleanupError
