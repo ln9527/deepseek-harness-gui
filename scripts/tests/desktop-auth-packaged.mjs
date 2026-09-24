@@ -5,9 +5,8 @@
  */
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -17,52 +16,15 @@ const origin = process.env.DSH_GUI_TEST_GATEWAY_ORIGIN
 if (origin !== 'http://127.0.0.1:47621') {
   throw new Error('Packaged UI acceptance requires the CI-only loopback origin http://127.0.0.1:47621')
 }
-const mode = process.argv[2] ?? '--unpacked'
-if (mode !== '--unpacked' && mode !== '--nsis') throw new Error('Use --unpacked or --nsis')
-if (mode === '--nsis' && process.platform !== 'win32') throw new Error('NSIS acceptance requires Windows')
+if (process.argv[2] !== '--unpacked') throw new Error('Use --unpacked for the packaged payload UI check')
 const profileRoot = mkdtempSync(join(tmpdir(), 'dsh-gui-packaged-auth-'))
 const userDataDir = join(profileRoot, 'DSH GUI Test')
-const installDir = join(profileRoot, 'install')
 const dshHome = join(profileRoot, 'DSH_HOME')
 const evidenceDir = resolve('dist-win-test/ui-evidence')
 for (const dir of [userDataDir, dshHome, evidenceDir]) mkdirSync(dir, { recursive: true })
-const executablePath = mode === '--nsis' ? join(installDir, 'DSH GUI Test.exe')
-  : process.platform === 'win32' ? resolve('dist-win-test/win-unpacked/DSH GUI Test.exe')
-    : process.env.DSH_GUI_TEST_EXECUTABLE
-let installed = false
-
-function runInstaller(exe, args) {
-  // NSIS can create child processes. Do not wait for inherited stdio pipes to
-  // close after the installer itself exits.
-  const result = spawnSync(exe, args, { timeout: 180_000, windowsHide: true, stdio: 'ignore' })
-  if (result.error || result.status !== 0) {
-    const entries = existsSync(installDir) ? readdirSync(installDir).slice(0, 12).join(', ') : '(missing)'
-    throw new Error(`NSIS ${args[0]} failed: ${result.error?.message ?? `exit ${result.status}`}; installedExe=${existsSync(executablePath)}; tempInstallEntries=${entries}`)
-  }
-}
-
-function installTestApp() {
-  const version = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version
-  const installer = resolve(`dist-win-test/DSH-GUI-Test-Setup-${version}-x64.exe`)
-  if (!existsSync(installer)) throw new Error('Test-only NSIS installer is missing')
-  // electron-builder 26.15.3's per-user NSIS template accepts /S and a final
-  // unquoted /D= path. Use a disposable path and reject accidental spaces.
-  if (/\s/.test(installDir)) throw new Error('NSIS test installation directory must have no spaces')
-  process.stdout.write('Starting isolated silent test NSIS installation.\n')
-  runInstaller(installer, ['/S', `/D=${installDir}`])
-  installed = true
-  if (!existsSync(executablePath)) throw new Error('NSIS finished without installing the test executable in the requested directory')
-  process.stdout.write('Isolated silent test NSIS installation completed.\n')
-}
-
-function uninstallTestApp() {
-  if (!existsSync(installDir)) return
-  const uninstaller = readdirSync(installDir).find((name) => /^Uninstall .*\.exe$/i.test(name))
-  if (!uninstaller) throw new Error('NSIS test uninstaller is missing')
-  process.stdout.write('Starting isolated silent test NSIS uninstallation.\n')
-  runInstaller(join(installDir, uninstaller), ['/S'])
-  process.stdout.write('Isolated silent test NSIS uninstallation completed.\n')
-}
+const executablePath = process.platform === 'win32'
+  ? resolve('dist-win-test/win-unpacked/DSH GUI Test.exe')
+  : process.env.DSH_GUI_TEST_EXECUTABLE
 
 function createFixture() {
   const username = 'synthetic-ci-member'
@@ -220,7 +182,6 @@ async function quitApp(app, window) {
 }
 
 try {
-  if (mode === '--nsis') installTestApp()
   if (!executablePath || !existsSync(executablePath)) throw new Error('Test-only packaged Electron executable is missing')
   await new Promise((resolveListen, rejectListen) => {
     fixture.server.once('error', rejectListen)
@@ -234,7 +195,7 @@ try {
   await window.getByText('已连接组织账号', { exact: true }).waitFor({ timeout: 20_000 })
   await window.getByText('账号：synthetic-ci-member').waitFor()
   await window.getByText(/凭据已由系统安全存储/).waitFor()
-  await window.screenshot({ path: join(evidenceDir, mode === '--nsis' ? 'connected-nsis.png' : 'connected-unpacked.png') })
+  await window.screenshot({ path: join(evidenceDir, 'connected-unpacked.png') })
   assert.ok(existsSync(join(userDataDir, 'desktop-credential.bin')))
   process.stdout.write('Packaged manage window: synthetic sign-in and encrypted save passed.\n')
 
@@ -254,7 +215,7 @@ try {
   process.stdout.write('Packaged manage window: revocation and local credential clear passed.\n')
   await quitApp(app, window)
 } catch (error) {
-  if (manage) await manage.screenshot({ path: join(evidenceDir, mode === '--nsis' ? 'failure-nsis.png' : 'failure-unpacked.png'), timeout: 5_000 }).catch(() => {})
+  if (manage) await manage.screenshot({ path: join(evidenceDir, 'failure-unpacked.png'), timeout: 5_000 }).catch(() => {})
   testError = error
 } finally {
   let cleanupError = null
@@ -262,7 +223,6 @@ try {
   fixture.server.closeAllConnections()
   await new Promise((done) => fixture.server.close(done))
   try {
-    if (installed) uninstallTestApp()
     rmSync(profileRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
   } catch (error) { cleanupError = error }
   if (testError) throw testError
