@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "dist": "node scripts/fetch-builtin-runtime.mjs && electron-vite build && electron-builder --mac --arm64",
     "dist:win": "node scripts/fetch-builtin-runtime.mjs --platform win32 && electron-vite build && electron-builder --win --x64 --config electron-builder.win.yml",
+    "dist:win:test": "node scripts/build-win-test.mjs",
     "fetch:runtime": "node scripts/fetch-builtin-runtime.mjs",
     "icons": "node scripts/gen-icons.mjs",
     "start:packaged": "electron-vite preview"

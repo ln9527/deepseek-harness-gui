@@ -1,8 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import type { DesktopIdentity } from '../../shared/desktop-auth'
-
-export const GATEWAY_ORIGIN = 'https://ds.ainativeorg.net'
 const identitySchema = z.object({ username: z.string().min(1), role: z.string().min(1) })
 const startSchema = z.object({
   requestId: z.string().min(1),
@@ -40,7 +38,7 @@ export class DesktopAuthError extends Error {
 /** Only this narrowly scoped client knows the desktop-auth wire protocol. */
 export class DesktopAuthClient {
   constructor(
-    private readonly origin = GATEWAY_ORIGIN,
+    private readonly origin: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now
   ) {

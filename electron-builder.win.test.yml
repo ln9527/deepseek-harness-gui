@@ -1,0 +1,30 @@
+# Acceptance build only. The main bundle is compiled with a fixed loopback Gateway origin.
+appId: com.ningli.dshgui.test
+productName: DSH GUI Test
+executableName: DSH GUI Test
+directories:
+  buildResources: build
+  output: dist-win-test
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/tray
+    to: resources/tray
+  - from: resources/dsh-runtime-win
+    to: resources/dsh-runtime-win
+  - from: resources/node-runtime-win
+    to: resources/node-runtime-win
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: DSH GUI Test
+  artifactName: DSH-GUI-Test-Setup-${version}-x64.exe

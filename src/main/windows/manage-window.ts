@@ -15,6 +15,7 @@ export interface ManageWindowDeps {
   readonly devServerUrl: string | null
   readonly rendererDistDir: string
   readonly preloadPath: string
+  readonly appTitle?: string
 }
 
 export type ManageTab = 'versions' | 'settings' | 'account' | 'logs' | 'about'
@@ -55,7 +56,7 @@ export class ManageWindowController {
       width: 760,
       height: 600,
       show: false,
-      title: 'DSH GUI 管理',
+      title: `${this.deps.appTitle ?? 'DSH GUI'} 管理`,
       autoHideMenuBar: true,
       resizable: true,
       webPreferences: {

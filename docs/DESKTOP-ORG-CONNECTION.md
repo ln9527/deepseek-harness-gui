@@ -2,6 +2,8 @@
 
 状态：`codex/desktop-org-login-20260925` 开发分支，未合入 `main`，未发布安装包。仓库 `package.json` 当前写 `0.2.1`；截至 2026-09-25，公开 Windows Releases 的最新安装包仍为 v0.1.2。代码、CI 构建和可下载安装包是三种不同证据。
 
+标准包始终固定生产 HTTPS Gateway。为真实 Windows 登录验收，另有仅供合成账号的 `DSH GUI Test` 构建：Gateway loopback 地址在构建时编译进主进程，安装名、appId 和用户数据均隔离；操作步骤见 [Windows 测试安装包验收](WINDOWS-DESKTOP-AUTH-ACCEPTANCE.md)。设备凭据也绑定 Gateway origin，跨包或旧格式凭据不会用于启动重验。
+
 ## 用户流程
 
 1. Windows/macOS 安装包启动后，原本的本地 DSH 工作台仍可独立运行。打开「管理 → 组织连接」，点「连接组织账号」。
@@ -41,4 +43,4 @@ Native POST 加 `x-dsh-desktop-client: 1`、JSON Content-Type、同域 Origin，
 - `pnpm build`
 - `DSH_GATEWAY_SOURCE=/path/to/dsh-agent-core pnpm exec vitest run tests/desktop-auth/gateway-contract.test.ts`：Node 24 下真实 Gateway HTTP + 临时 SQLite/随机端口/合成账号，start→批准→poll→me→logout、拒绝、关闭启用门的 404 和断网均通过。联测时 Gateway 为 `4b00d0e`，桌面由此修正 challenge 为 `SHA-256(UTF-8(verifier))`。
 - `RUN_BUILTIN_SMOKE=1 pnpm exec vitest run tests/dsh-runtime/builtin-runtime.integration.test.ts`：macOS 本机内置 0.1.5-rc.2 验证无 token 401、tokened URL 303 并发 cookie、带 cookie 200 HTML。Windows CI 使用安装包内置的真实 `node.exe` 跑同一契约；待 CI 复验。
-- 待完成：Windows CI 安装包、真实 Windows GUI 检查与公开发布决策。
+- Windows CI 在提交 `146b545` 上完成标准 NSIS 候选包构建；该构建通过不能代替真实 Windows GUI 检查。测试版安装包的实际 Windows 验收和公开发布决策仍待完成。

@@ -17,6 +17,7 @@ export interface MainWindowDeps {
   readonly devServerUrl: string | null
   readonly rendererDistDir: string
   readonly preloadPath: string
+  readonly appTitle?: string
   readonly initialBounds: { readonly width: number; readonly height: number }
   readonly onManageRequested: () => void
   readonly onBoundsChanged: (bounds: { width: number; height: number; x: number | null; y: number | null }) => void
@@ -33,7 +34,7 @@ export class MainWindowController {
       width: deps.initialBounds.width,
       height: deps.initialBounds.height,
       show: false,
-      title: 'DSH GUI',
+      title: deps.appTitle ?? 'DSH GUI',
       autoHideMenuBar: true,
       webPreferences: {
         preload: deps.preloadPath,
