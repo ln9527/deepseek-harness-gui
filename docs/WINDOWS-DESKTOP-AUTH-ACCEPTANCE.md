@@ -9,24 +9,24 @@
 
 ## CI 候选与证据（2026-09-25）
 
-[CI run 36042904833](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833)
-在提交 `2421377cb8117d68d768b383285514242ce069ed` 上完成：macOS
+[CI run 36046842387](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046842387)
+在提交 `f7480cde31970c41c003032e2cf4a0fea7fb67cc` 上完成：macOS
 测试、标准 Windows 测试与 NSIS 构建、测试专用 Windows NSIS 构建和
 `win-unpacked` 管理窗自动检查三个 job 均通过。Windows 管理窗日志分别
 确认合成账号连接和加密保存、退出重启后 `/me` 重验、组织撤权后清除本地凭据。
 
 本次 Windows 人工验收请取该 run 的
-[DSH-GUI-Test-Setup-win-x64-TEST-ONLY artifact](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833/artifacts/10827811329)
+[DSH-GUI-Test-Setup-win-x64-TEST-ONLY artifact](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046842387/artifacts/10828812503)
 （14 天保留）。其中 EXE 文件名为
 `DSH-GUI-Test-Setup-0.2.1-x64.exe`，Windows runner 用 `Get-FileHash`
 记录的 EXE SHA-256 为
-`918bf2584bffd2672862b433044021ee128cb6988bd49cb286034919d1037a28`。
+`2f2dc4e38be637fdc82e657b76e4d29b95845e9b834564be3ea8ad71ee0c8999`。
 GitHub 上传归档的 SHA-256 为
-`48f094eebbc551573090abdf1cbd8cf1cc88b65e9442c1f5634526b125855b73`。
-同一 run 的[标准版安装包归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833/artifacts/10828121159)
-SHA-256 为 `cab3105da902e80f83526a8cd14e5a88df4f8c26010301625a1d08321bb53728`；
-[合成 UI 截图归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36042904833/artifacts/10827796464)
-SHA-256 为 `f766c8169ca3848dc63b5bd98eac00edc33de63e9e919bb962619241cff339ae`。
+`b49862d4511a43052728ec2ff88102fd6a663ce865af5d6f854006e7be8b10db`。
+同一 run 的[标准版安装包归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046842387/artifacts/10828732662)
+SHA-256 为 `f64bfaf425be23b3920d474f947e6aba8d82381b11a9b99871daded9469ac8d9`；
+[合成 UI 截图归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36046842387/artifacts/10829131575)
+SHA-256 为 `4cbca8ebcd41b16b6a332e7706344be4e0575b59a5d61eb82e84cf1469ad6b6d`。
 这个候选只证明 Windows CI 构建和自动测试通过；尚未在 Windows
 桌面上完成以下浏览器批准、重启、撤销、拒绝、过期与离线交互验收。
 
@@ -54,12 +54,17 @@ Windows 桌面完成真实浏览器批准、拒绝、过期、离线与可见安
 [第二次 Windows 探针 run 36039856360](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36039856360)
 中，macOS、标准 Windows 和测试版 `win-unpacked` 界面步骤均通过；后者在
 真实 Windows runner 上完成了合成账号连接、加密保存、退出重启后 `/me`
-验证及撤销后清除本地凭据。最新全绿 run 36042904833 复现上述三段断言。
+验证及撤销后清除本地凭据。最新全绿 run 36046842387 复现上述三段断言。
 其截图经目视检查，只含临时合成用户名、不含设备 token；截图文件 SHA-256
 为 `2781710b2828374b97d4d15c1e492ebbcba6a682b3f9e4e36efbeae897a21521`，
 与下方已入库的早一次 Windows runner 截图逐字节相同：
 
 ![Windows CI 中未安装版的合成账号已连接管理窗](assets/windows-auth-unpacked-36039856360.png)
+
+[中间 run 36044216797](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36044216797)
+的三段登录、重启、撤权断言也通过，但应用退出时 renderer 已关闭，测试脚本仍等待
+Playwright `evaluate` 回包，造成 job 红。`f7480cd` 改为在发出退出请求后以 25 秒内
+实际进程退出为准；上述最新全绿 run 复验了这一修正。
 
 run 36039856360 的静默 NSIS 安装在 `/S /D=<临时目录>` 命令上达到 120 秒
 超时。[第三次 run 36041304205](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36041304205)
