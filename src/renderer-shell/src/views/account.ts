@@ -50,9 +50,10 @@ export function renderAccount(content: HTMLElement): () => void {
         body.append(
           el('p', { class: offline ? 'account-state offline' : 'account-state connected' }, offline ? '组织连接待验证 · 当前离线' : '已连接组织账号'),
           el('p', {}, `账号：${state.user.username}`),
-          el('p', { class: 'hint' }, state.saved ? '凭据已由系统安全存储；组织可随时撤销设备连接。' : '系统安全存储不可用，关闭应用后需要重新连接。'),
+          el('p', { class: 'hint' }, state.saved ? '凭据已由系统安全存储；设备连接最长 14 天，到期或组织撤销后需重新连接。' : '系统安全存储不可用，关闭应用后需要重新连接。'),
           el('div', { class: 'row' },
             offline ? button('重试验证', () => { void api.refreshDesktopAuth().then(showError) }) : null,
+            button('在浏览器管理设备', () => { void api.openDesktopDeviceManagement().then(showError) }),
             button('断开组织连接', () => {
               feedback.textContent = '正在断开…'
               void api.disconnectDesktopAuth().then(showError)

@@ -91,6 +91,15 @@ export class DesktopAuthService {
     }
   }
 
+  async openDeviceManagement(): Promise<Result<null>> {
+    try {
+      await this.deps.openExternal(this.deps.client.manageUrl())
+      return ok(null)
+    } catch {
+      return err('BROWSER_UNAVAILABLE', '无法打开组织设备管理页')
+    }
+  }
+
   cancel(): void {
     if (!this.flow) return
     this.stopPolling()

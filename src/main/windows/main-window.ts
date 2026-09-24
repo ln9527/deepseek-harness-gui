@@ -7,6 +7,7 @@
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { getLogger } from '../logger'
+import { navigationTargetForLog } from './log-url'
 
 const log = getLogger('main-window')
 
@@ -58,7 +59,7 @@ export class MainWindowController {
     })
     this.window.webContents.on('did-fail-load', (_event, code, description, url) => {
       if (url.startsWith('http://127.0.0.1:')) {
-        log.warn('DSH page failed to load', { code, description, url })
+        log.warn('DSH page failed to load', { code, description, target: navigationTargetForLog(url) })
         this.showShellView('error')
       }
     })
@@ -97,7 +98,7 @@ export class MainWindowController {
     }
     this.currentView = 'dsh'
     this.currentDshUrl = url
-    log.info('loading DSH Web UI', { url })
+    log.info('loading DSH Web UI', { target: navigationTargetForLog(url) })
     void this.window.loadURL(url)
   }
 

@@ -38,6 +38,7 @@ const api: DshShellApi = {
   refreshDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthRefresh),
   startDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthStart),
   openDesktopVerification: () => ipcRenderer.invoke(IpcChannel.DesktopAuthOpen),
+  openDesktopDeviceManagement: () => ipcRenderer.invoke(IpcChannel.DesktopAuthManage),
   cancelDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthCancel),
   disconnectDesktopAuth: () => ipcRenderer.invoke(IpcChannel.DesktopAuthDisconnect),
   onDesktopAuthChanged: (cb) => subscribe(IpcChannel.DesktopAuthChanged, cb)

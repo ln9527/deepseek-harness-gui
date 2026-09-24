@@ -28,6 +28,7 @@ export const IpcChannel = {
   DesktopAuthRefresh: 'desktop-auth:refresh',
   DesktopAuthStart: 'desktop-auth:start',
   DesktopAuthOpen: 'desktop-auth:open',
+  DesktopAuthManage: 'desktop-auth:manage',
   DesktopAuthCancel: 'desktop-auth:cancel',
   DesktopAuthDisconnect: 'desktop-auth:disconnect',
   // main → renderer (push)
@@ -95,6 +96,7 @@ export interface DshShellApi {
   refreshDesktopAuth(): Promise<Result<null>>
   startDesktopAuth(): Promise<Result<DesktopAuthState>>
   openDesktopVerification(): Promise<Result<null>>
+  openDesktopDeviceManagement(): Promise<Result<null>>
   cancelDesktopAuth(): Promise<Result<null>>
   disconnectDesktopAuth(): Promise<Result<null>>
   onDesktopAuthChanged(cb: (state: DesktopAuthState) => void): () => void

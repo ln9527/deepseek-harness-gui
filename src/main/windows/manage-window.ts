@@ -6,6 +6,8 @@
 import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { getLogger } from '../logger'
+import type { DesktopAuthState } from '../../shared/desktop-auth'
+import { IpcChannel } from '../../shared/ipc-types'
 
 const log = getLogger('manage-window')
 
@@ -32,6 +34,12 @@ export class ManageWindowController {
 
   ownsWebContents(senderId: number): boolean {
     return this.window !== null && !this.window.isDestroyed() && this.window.webContents.id === senderId
+  }
+
+  sendDesktopAuth(state: DesktopAuthState): void {
+    if (this.window !== null && !this.window.isDestroyed()) {
+      this.window.webContents.send(IpcChannel.DesktopAuthChanged, state)
+    }
   }
 
   /** 打开管理窗;可指定定位 tab(已开时重新路由到该 tab)。 */

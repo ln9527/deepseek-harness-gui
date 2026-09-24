@@ -26,7 +26,7 @@ import { DshNotifier } from './notify-bridge/notifier'
 import { MainWindowController } from './windows/main-window'
 import { ManageWindowController } from './windows/manage-window'
 import { TrayController } from './tray/tray'
-import { broadcastDesktopAuth, broadcastInstallProgress, broadcastSettings, broadcastSnapshot, registerIpc } from './ipc/register'
+import { broadcastInstallProgress, broadcastSettings, broadcastSnapshot, registerIpc } from './ipc/register'
 import { DesktopAuthClient } from './desktop-auth/client'
 import { DesktopCredentialStore } from './desktop-auth/credential-store'
 import { DesktopAuthService } from './desktop-auth/service'
@@ -102,14 +102,6 @@ function bootstrap(): void {
 
     // ---- 设置 / 版本注册表 ----
     const settingsStore = new SettingsStore(paths.settingsPath)
-    const desktopAuth = new DesktopAuthService({
-      client: new DesktopAuthClient(),
-      store: new DesktopCredentialStore(join(paths.userDataDir, 'desktop-credential.bin'), safeStorage),
-      openExternal: (url) => shell.openExternal(url),
-      deviceName: `DSH GUI (${process.platform === 'win32' ? 'Windows' : 'macOS'}) · ${hostname().slice(0, 48)}`,
-      onState: broadcastDesktopAuth
-    })
-    void desktopAuth.refresh()
     const npmPath = findNpm(process.env.PATH ?? '')
     if (npmPath === null) {
       log.warn('npm not found on PATH —— 版本安装/升级不可用(内置/已安装版本仍可运行)')
@@ -180,6 +172,15 @@ function bootstrap(): void {
     })
     const manageWindow = new ManageWindowController({ devServerUrl, rendererDistDir, preloadPath })
     focusMain = () => mainWindow.show()
+
+    const desktopAuth = new DesktopAuthService({
+      client: new DesktopAuthClient(),
+      store: new DesktopCredentialStore(join(paths.userDataDir, 'desktop-credential.bin'), safeStorage),
+      openExternal: (url) => shell.openExternal(url),
+      deviceName: `DSH GUI (${process.platform === 'win32' ? 'Windows' : 'macOS'}) · ${hostname().slice(0, 48)}`,
+      onState: (state) => manageWindow.sendDesktopAuth(state)
+    })
+    void desktopAuth.refresh()
 
     // ---- 通知桥 ----
     const bridge = new NotifyBridge()

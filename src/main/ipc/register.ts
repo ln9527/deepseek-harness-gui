@@ -30,7 +30,6 @@ import type { VersionInstaller } from '../dsh-versions/installer'
 import type { DshRuntimeSupervisor } from '../dsh-runtime/supervisor'
 import type { SettingsStore } from '../settings/store'
 import type { DesktopAuthService } from '../desktop-auth/service'
-import type { DesktopAuthState } from '../../shared/desktop-auth'
 import { err, errFromUnknown, ok } from '../util/result'
 import type { ZodType } from 'zod'
 
@@ -41,6 +40,7 @@ const desktopAuthChannels = new Set<string>([
   IpcChannel.DesktopAuthRefresh,
   IpcChannel.DesktopAuthStart,
   IpcChannel.DesktopAuthOpen,
+  IpcChannel.DesktopAuthManage,
   IpcChannel.DesktopAuthCancel,
   IpcChannel.DesktopAuthDisconnect
 ])
@@ -186,6 +186,11 @@ export function registerIpc(deps: IpcDeps): void {
       handler: () => deps.desktopAuth.openVerification()
     },
     {
+      channel: IpcChannel.DesktopAuthManage,
+      schema: voidSchema,
+      handler: () => deps.desktopAuth.openDeviceManagement()
+    },
+    {
       channel: IpcChannel.DesktopAuthCancel,
       schema: voidSchema,
       handler: () => withResult(() => deps.desktopAuth.cancel())
@@ -286,10 +291,6 @@ export function broadcastInstallProgress(progress: InstallProgress): void {
 
 export function broadcastSettings(settings: ShellSettings): void {
   broadcast(IpcChannel.SettingsChanged, settings)
-}
-
-export function broadcastDesktopAuth(state: DesktopAuthState): void {
-  broadcast(IpcChannel.DesktopAuthChanged, state)
 }
 
 function broadcast(channel: string, payload: unknown): void {

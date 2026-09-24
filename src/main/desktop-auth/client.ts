@@ -45,14 +45,19 @@ export class DesktopAuthClient {
     private readonly now: () => number = Date.now
   ) {
     const parsed = new URL(origin)
-    if (parsed.protocol !== 'https:' || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-      throw new Error('Desktop gateway must be an HTTPS origin')
+    const localHttp = parsed.protocol === 'http:' && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost')
+    if ((!localHttp && parsed.protocol !== 'https:') || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new Error('Desktop gateway must be an HTTPS origin (local HTTP is test-only)')
     }
+  }
+
+  manageUrl(): string {
+    return new URL('/auth/desktop/manage', this.origin).toString()
   }
 
   async start(deviceName: string): Promise<PendingDesktopFlow> {
     const verifier = randomBytes(32).toString('base64url')
-    const challenge = createHash('sha256').update(Buffer.from(verifier, 'base64url')).digest('base64url')
+    const challenge = createHash('sha256').update(verifier, 'utf8').digest('base64url')
     const data = startSchema.parse(await this.request('/auth/desktop/start', {
       method: 'POST', body: JSON.stringify({ challenge, deviceName })
     }))
@@ -99,9 +104,10 @@ export class DesktopAuthClient {
     const data: unknown = await response.json().catch(() => null)
     if (!response.ok) {
       const code = errorSchema.safeParse(data).data?.code ?? 'GATEWAY_ERROR'
-      const message = code === 'DEVICE_FLOW_EXPIRED' ? '连接码已过期，请重新开始'
+      const message = response.status === 404 ? '此组织服务尚未启用桌面连接，或当前网关版本不支持'
+        : code === 'DEVICE_FLOW_EXPIRED' ? '连接码已过期，请重新开始'
         : code === 'DEVICE_FLOW_DENIED' ? '这次设备连接已被拒绝'
-        : code === 'DEVICE_TOKEN_INVALID' ? '设备连接已失效，请重新连接'
+        : code === 'DEVICE_TOKEN_INVALID' ? '设备连接已失效或到期，请重新连接'
         : `组织服务暂时无法完成请求 (${response.status})`
       throw new DesktopAuthError(code, message)
     }
