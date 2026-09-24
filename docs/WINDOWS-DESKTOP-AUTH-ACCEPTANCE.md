@@ -85,7 +85,15 @@ EXE 不能证明安装完成。两次安装后的管理窗流程都未运行，�
 测试夹具立即删除临时目录遇到 Windows `EBUSY`，当时未等待安装文件实际消失。
 当前草稿把安装上限放宽到 10 分钟，并在卸载返回后最多等待 120 秒，
 以已安装 EXE 和卸载程序均消失作为卸载检查，再有界清理测试目录。
-此更改必须由后续 CI 复验后才能算完整安装/卸载自动验收。
+[复验 run 36048250087](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36048250087)
+在 `03a2361` 上三个 job 全绿：测试版 NSIS 约 6 分 45 秒安装完毕并生成卸载程序，
+安装目录内的管理窗通过合成登录、系统加密凭据保存、退出重启后 `/me` 重验和
+组织撤权后清除本地凭据。卸载程序返回约 16 秒后，安装 EXE 与卸载程序都消失，
+临时目录清理通过。该 run 的[合成界面截图归档](https://github.com/ln9527/deepseek-harness-gui/actions/runs/36048250087/artifacts/10829698610)
+含 `connected-nsis.png`；经目视检查仅显示 `synthetic-ci-member`，无设备 token，
+该 PNG 的 SHA-256 为 `2781710b2828374b97d4d15c1e492ebbcba6a682b3f9e4e36efbeae897a21521`。
+这证明隔离测试安装包在 Windows CI 中的自动安装、管理窗路径和静默卸载；
+网页批准仍由本机夹具模拟，未进行真实 Gateway 网页点击。
 
 正式发布前仍须执行下文的可见 Windows 安装与卸载验收。
 
